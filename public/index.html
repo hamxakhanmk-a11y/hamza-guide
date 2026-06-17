@@ -1160,6 +1160,13 @@
   </div>
   <div class="topbar-right">
     <span id="save-indicator" style="display:none;"></span>
+    <!-- Hidden stubs — renderUserChip() and other tracker code still touch
+         these IDs; null-deref kills init. Kept invisible. -->
+    <div id="user-chip" style="display:none;">
+      <img id="user-pic" alt="">
+      <span id="user-name"></span>
+      <span id="user-role-pill"></span>
+    </div>
   </div>
 </div>
 
@@ -11717,6 +11724,14 @@ function hgShowTab(name) {
 window.addEventListener('load', () => {
   setTimeout(() => { if (typeof openCalculator === 'function') openCalculator(); }, 150);
 });
+
+// Safety net: if tracker init() throws for any reason (DB error, missing DOM
+// element, etc.), force-hide the loading screen after 2s so the user at
+// least sees the Hamza Guide shell.
+setTimeout(() => {
+  const ls = document.getElementById('loading-screen');
+  if (ls) ls.style.display = 'none';
+}, 2000);
 </script>
 </body>
 </html>
