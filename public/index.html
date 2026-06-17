@@ -1149,25 +1149,26 @@
   <div id="login-error"></div>
 </div>
 
-<div class="topbar">
-  <div>
-    <div class="topbar-brand"><img class="topbar-brand-logo" src="/logo.png" alt="Hamza Guide">Hamza <span>Guide</span></div>
-    <div class="topbar-sub">Calculations &amp; Costing</div>
-  </div>
-  <div class="mode-switch" id="hg-tabs" style="margin-left:auto;">
-    <button class="mode-btn"        id="hg-tab-job"   onclick="hgShowTab('job')">&#128203; Job (PO)</button>
-    <button class="mode-btn active" id="hg-tab-paper" onclick="hgShowTab('paper')">&#129518; Paper</button>
-    <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
-  </div>
-  <div class="topbar-right">
-    <span id="save-indicator" style="display:none;"></span>
-    <!-- Hidden stubs — renderUserChip() and other tracker code still touch
-         these IDs; null-deref kills init. Kept invisible. -->
-    <div id="user-chip" style="display:none;">
-      <img id="user-pic" alt="">
-      <span id="user-name"></span>
-      <span id="user-role-pill"></span>
+<!-- Sticky maroon hero — greeting + tabs on the left, Supreme Art Urdu
+     calligraphy watermark on the right. Kept as .topbar so legacy
+     hideLogin/showLogin can still toggle it without NPE-ing. -->
+<div class="topbar hg-hero">
+  <div class="hg-hero-left">
+    <div class="hero-greet"><span id="hg-greet-text">Good evening</span>, Hamza <span class="hero-wave">&#128075;</span></div>
+    <div class="mode-switch" id="hg-tabs">
+      <button class="mode-btn"        id="hg-tab-job"   onclick="hgShowTab('job')">&#128203; Job (PO)</button>
+      <button class="mode-btn active" id="hg-tab-paper" onclick="hgShowTab('paper')">&#129518; Paper</button>
+      <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
     </div>
+  </div>
+  <div class="hero-mark">
+    <img class="hero-mark-img" alt="Supreme Art" onerror="this.style.display='none'">
+    <div class="hero-mark-text">Supreme Art (Pvt) Ltd.</div>
+  </div>
+  <!-- Hidden stubs — legacy tracker code still touches these IDs. -->
+  <span id="save-indicator" style="display:none;"></span>
+  <div id="user-chip" style="display:none;">
+    <img id="user-pic" alt=""><span id="user-name"></span><span id="user-role-pill"></span>
   </div>
 </div>
 
@@ -1178,9 +1179,46 @@
   #jobs-mode, #inventory-mode, #reports-mode, #stickers-mode,
   #station-mode, #forms-mode, #users-mode, #imports-mode,
   #app-date, #user-chip, #calc-launcher { display: none !important; }
-  .topbar { gap: 0.75rem; }
-  .topbar-brand { white-space: nowrap; }
-  .topbar-sub   { white-space: nowrap; }
+  /* ── Maroon sticky hero — replaces the white topbar. ── */
+  .topbar.hg-hero {
+    position: sticky; top: 0; z-index: 100;
+    background: linear-gradient(180deg, var(--brand) 0%, var(--brand-dark) 100%);
+    color: #fff;
+    height: auto;
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 24px;
+    border-bottom: none;
+    box-shadow: 0 4px 14px rgba(124,31,31,0.22);
+    overflow: hidden;
+  }
+  .hg-hero-left { flex: 1; min-width: 0; position: relative; z-index: 2; display: flex; flex-direction: column; gap: 10px; }
+  .hg-hero .hero-greet { margin: 0; }
+  .hg-hero .mode-switch {
+    background: rgba(0,0,0,0.22); padding: 4px; border-radius: 8px;
+    margin: 0; display: inline-flex; gap: 4px; align-self: flex-start;
+  }
+  .hg-hero .mode-btn {
+    background: transparent; color: #fff; border: none;
+    padding: 7px 14px; font-weight: 600; font-size: 13px;
+    border-radius: 5px; cursor: pointer; font-family: var(--font);
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+  .hg-hero .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.14); color: #fff; }
+  .hg-hero .mode-btn.active { background: #fff; color: var(--brand-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+  .hg-hero .hero-mark {
+    position: static; transform: none;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    pointer-events: none; flex-shrink: 0; z-index: 1;
+  }
+  .hg-hero .hero-mark-img { height: 56px; width: auto; }
+  .hg-hero .hero-mark-text { color: #fff; font-family: 'Georgia','Times New Roman',serif; font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; margin-top: 2px; white-space: nowrap; }
+  @media (max-width: 700px) {
+    .topbar.hg-hero { padding: 11px 14px; gap: 12px; }
+    .hg-hero .hero-mark-img { height: 38px; }
+    .hg-hero .hero-mark-text { font-size: 9px; letter-spacing: 0.12em; }
+    .hg-hero .mode-btn { padding: 6px 10px; font-size: 12px; }
+    .hg-hero .hero-greet { font-size: 11px; letter-spacing: 0.10em; }
+  }
   .hg-main {
     max-width: 520px; margin: 0 auto; padding: 1rem 1rem 1.5rem;
   }
@@ -1193,8 +1231,8 @@
     width: 100% !important;
     max-width: 520px !important;
     margin: 0 auto !important;
-    /* viewport - (topbar 56 + main paddings ~32) ≈ leave breathing room */
-    max-height: calc(100vh - 96px) !important;
+    /* viewport - (sticky hero ~120 + main paddings ~32) ≈ breathing room */
+    max-height: calc(100vh - 170px) !important;
     overflow-y: auto !important;
     padding: 14px 16px !important;
     box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
@@ -11749,13 +11787,31 @@ function hgPlaceCalcInline() {
   if (pop && main && pop.parentElement !== main) main.appendChild(pop);
 }
 
+// Time-based greeting + Supreme Art watermark. greetingForNow() and
+// buildWhiteLogo() are inherited from the original tracker; we just call
+// them on load and tick the greeting once an hour so an open tab catches
+// the morning → afternoon → evening transitions.
+function hgRenderHero() {
+  const t = document.getElementById('hg-greet-text');
+  if (t && typeof greetingForNow === 'function') t.textContent = greetingForNow();
+  const markImg = document.querySelector('.hg-hero .hero-mark-img');
+  if (markImg && typeof buildWhiteLogo === 'function') {
+    buildWhiteLogo().then(url => { if (url && markImg) markImg.src = url; });
+  }
+}
+
 // Open the calculator as soon as the page is ready — it's the main feature.
 window.addEventListener('load', () => {
   setTimeout(() => {
+    hgRenderHero();
     hgPlaceCalcInline();
     if (typeof openCalculator === 'function') openCalculator();
   }, 150);
 });
+setInterval(() => {
+  const t = document.getElementById('hg-greet-text');
+  if (t && typeof greetingForNow === 'function') t.textContent = greetingForNow();
+}, 60 * 60 * 1000);
 
 // Safety net: if tracker init() throws for any reason (DB error, missing DOM
 // element, etc.), force-hide the loading screen after 2s so the user at
