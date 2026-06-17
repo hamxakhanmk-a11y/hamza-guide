@@ -1155,7 +1155,8 @@
     <div class="topbar-sub">Calculations &amp; Costing</div>
   </div>
   <div class="mode-switch" id="hg-tabs" style="margin-left:auto;">
-    <button class="mode-btn active" id="hg-tab-calc"  onclick="hgShowTab('calc')">&#129518; Calculator</button>
+    <button class="mode-btn"        id="hg-tab-job"   onclick="hgShowTab('job')">&#128203; Job (PO)</button>
+    <button class="mode-btn active" id="hg-tab-paper" onclick="hgShowTab('paper')">&#129518; Paper</button>
     <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
   </div>
   <div class="topbar-right">
@@ -1193,14 +1194,19 @@
 </style>
 
 <div id="hg-content" class="hg-main">
-  <div id="hg-calc-pane" class="hg-card">
-    <div class="hg-title">&#129518; Calculator</div>
-    <div class="hg-sub">Paper weight &amp; sheet calculations, plus PO &rarr; sheets &rarr; cartons for jobs. The calculator opens in the top-right corner — click below to bring it up if it's closed.</div>
-    <button class="hg-btn-big" onclick="openCalculator()">Open Calculator</button>
+  <div id="hg-paper-pane" class="hg-card">
+    <div class="hg-title">&#129518; Paper Calculator</div>
+    <div class="hg-sub">Pick a paper type, enter sheet size &amp; GSM, then type any one of weight, sheets, or packets &mdash; the other two fill in automatically. The calculator is open in the top-right corner.</div>
+    <button class="hg-btn-big" onclick="openCalculator()">Open Paper Calculator</button>
+  </div>
+  <div id="hg-job-pane" class="hg-card" style="display:none;">
+    <div class="hg-title">&#128203; Job (PO) Calculator</div>
+    <div class="hg-sub">Enter PO quantity, tolerance %, and ups &rarr; calculator returns sheets needed and unit carton qty. The calculator is open in the top-right corner.</div>
+    <button class="hg-btn-big" onclick="openCalculatorJobMode()">Open Job (PO) Calculator</button>
   </div>
   <div id="hg-inbox-pane" class="hg-card" style="display:none;">
     <div class="hg-title">&#9993;&#65039; Inbox</div>
-    <div class="hg-sub">Read your Gmail inside Hamza Guide. <br><br><b>Coming soon</b> — needs a one-time Google Cloud setup (create a project, enable the Gmail API, add OAuth credentials). Tell me when you want to set this up and I'll walk you through it.</div>
+    <div class="hg-sub">Read your Gmail inside Hamza Guide. <br><br><b>Coming soon</b> &mdash; needs a one-time Google Cloud setup (create a project, enable the Gmail API, add OAuth credentials). Tell me when you want to set this up and I'll walk you through it.</div>
   </div>
 </div>
 
@@ -8330,17 +8336,9 @@ function calcRecalc() {
 // case branches in calcTabsHTML. Nothing else depends on it.
 
 function calcTabsHTML(active) {
-  // Three-button switcher rendered at the top of the popover. Active tab
-  // gets the dark fill; the others are outlined. Keeps every mode
-  // discoverable from a glance.
-  const onStyle  = 'background:#111;color:#fff;border-color:#111;';
-  const offStyle = 'background:#fff;color:var(--text);';
-  return `
-    <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <button class="btn btn-sm" style="flex:1;${active==='paper'?onStyle:offStyle}" onclick="openCalculator()">Paper</button>
-      <button class="btn btn-sm" style="flex:1;${active==='job'?onStyle:offStyle}" onclick="openCalculatorJobMode()">Job (PO)</button>
-      <button class="btn btn-sm" style="flex:1;${active==='history'?onStyle:offStyle}" onclick="openCalculatorHistoryMode()">History</button>
-    </div>`;
+  // Hamza Guide drives Paper / Job (PO) / Inbox switching from the topbar
+  // tabs, so the in-popover tab strip is redundant — return empty.
+  return '';
 }
 
 function openCalculatorJobMode() {
@@ -11703,21 +11701,19 @@ function startSmartPolling() {
 init();
 
 // ── Hamza Guide tab switcher ───────────────────────────────────
-// Toggles the visible content card (Calculator prompt vs. Inbox placeholder)
-// and updates the topbar tab pills. Auto-opens / closes the floating
-// calculator popover so the two views feel like distinct screens.
+// Three top-level tabs in the fixed topbar: Job (PO), Paper, Inbox.
+// Each one toggles the matching description card AND drives the floating
+// calculator popover into the right mode (or closes it for Inbox).
 function hgShowTab(name) {
-  const isCalc = name === 'calc';
-  const calcTab  = document.getElementById('hg-tab-calc');
-  const inboxTab = document.getElementById('hg-tab-inbox');
-  if (calcTab)  calcTab.classList.toggle('active',  isCalc);
-  if (inboxTab) inboxTab.classList.toggle('active', !isCalc);
-  const calcPane  = document.getElementById('hg-calc-pane');
-  const inboxPane = document.getElementById('hg-inbox-pane');
-  if (calcPane)  calcPane.style.display  = isCalc ? 'block' : 'none';
-  if (inboxPane) inboxPane.style.display = isCalc ? 'none'  : 'block';
-  if (isCalc) { if (typeof openCalculator  === 'function') openCalculator();  }
-  else        { if (typeof closeCalculator === 'function') closeCalculator(); }
+  ['job','paper','inbox'].forEach(t => {
+    const btn = document.getElementById('hg-tab-' + t);
+    if (btn) btn.classList.toggle('active', t === name);
+    const pane = document.getElementById('hg-' + t + '-pane');
+    if (pane) pane.style.display = (t === name) ? 'block' : 'none';
+  });
+  if (name === 'job'   && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
+  else if (name === 'paper' && typeof openCalculator    === 'function') openCalculator();
+  else if (name === 'inbox' && typeof closeCalculator   === 'function') closeCalculator();
 }
 
 // Open the calculator as soon as the page is ready — it's the main feature.
