@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Job Tracker Supreme Art</title>
+<title>Hamza Guide</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -1138,52 +1138,65 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <div id="loading-screen">
-  <div style="font-size:16px;font-weight:600;color:var(--text);">Job Tracker Supreme Art</div>
+  <div style="font-size:16px;font-weight:600;color:var(--text);">Hamza Guide</div>
   <div style="font-size:13px;color:var(--text2);">Loading...</div>
 </div>
 
-<!-- Login screen — shown when /api/auth/me returns 401. Hidden once signed in. -->
-<div id="login-screen" style="display:none; position:fixed; inset:0; background:var(--bg3); z-index:998; align-items:center; justify-content:center; flex-direction:column; gap:18px; padding:24px; text-align:center;">
-  <div style="font-size:22px;font-weight:600;color:var(--text);">Job Tracker <span style="color:var(--blue-text);">Supreme Art</span></div>
-  <div style="font-size:13px;color:var(--text2);max-width:380px;">Sign in with your authorized Google account to continue. If you haven't been invited yet, please ask your administrator.</div>
-  <div id="google-signin-btn" style="margin-top:8px;"></div>
-  <div id="login-error" style="font-size:13px;color:#A32D2D;display:none;max-width:380px;"></div>
+<!-- Login screen kept hidden — Hamza Guide is single-user, no auth.
+     The element stays so legacy showLogin() calls don't NPE. -->
+<div id="login-screen" style="display:none !important;">
+  <div id="google-signin-btn"></div>
+  <div id="login-error"></div>
 </div>
 
 <div class="topbar">
   <div>
-    <div class="topbar-brand"><img class="topbar-brand-logo" src="/logo.png" alt="Supreme Art">Job Tracker <span>Supreme Art</span></div>
-    <div class="topbar-sub">Packaging Press · Job Tracker</div>
+    <div class="topbar-brand"><img class="topbar-brand-logo" src="/logo.png" alt="Hamza Guide">Hamza <span>Guide</span></div>
+    <div class="topbar-sub">Calculations &amp; Costing</div>
   </div>
-  <div class="mode-switch" id="mode-switch">
-    <button class="mode-btn active" data-mode="jobs" id="mode-jobs-btn" onclick="setMode('jobs')">Jobs</button>
-    <button class="mode-btn" data-mode="inventory" id="mode-inventory-btn" onclick="setMode('inventory')">Inventory</button>
-    <button class="mode-btn" data-mode="reports" id="mode-reports-btn" onclick="setMode('reports')">Reports</button>
-    <button class="mode-btn" data-mode="stickers" id="mode-stickers-btn" onclick="setMode('stickers')">Stickers</button>
-    <button class="mode-btn" data-mode="station" id="mode-station-btn" onclick="setMode('station')">&#127981; Station</button>
-    <button class="mode-btn" data-mode="forms" id="mode-forms-btn" onclick="setMode('forms')">Forms</button>
-    <button class="mode-btn" data-mode="users" onclick="setMode('users')" id="mode-users-btn" style="display:none;">Users</button>
+  <div class="mode-switch" id="hg-tabs" style="margin-left:auto;">
+    <button class="mode-btn active" id="hg-tab-calc"  onclick="hgShowTab('calc')">&#129518; Calculator</button>
+    <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
   </div>
   <div class="topbar-right">
-    <span id="save-indicator" style="font-size:12px;color:var(--text2);opacity:0;transition:opacity 0.2s;">Saving...</span>
-    <!-- Calculator is now reached via the floating round 🧮 launcher in the
-         bottom-right corner — see #calc-launcher. Topbar button removed. -->
-    <button class="btn btn-sm" id="topbar-refresh" onclick="refreshCurrent()">&#8635; Refresh</button>
-    <button class="btn btn-sm" id="topbar-export" onclick="exportCSV()">Export to Excel</button>
-    <button class="btn btn-primary" id="topbar-add" onclick="openAdd()">+ New Job</button>
-    <div id="user-chip" style="display:none; align-items:center; gap:8px; margin-left:10px; padding-left:10px; border-left:1px solid var(--border);">
-      <img id="user-pic" src="" alt="" style="width:28px; height:28px; border-radius:50%; display:none;">
-      <div style="text-align:right; line-height:1.2;">
-        <div id="user-name" style="font-size:13px; font-weight:600; color:var(--text);"></div>
-        <div id="user-role-pill" style="font-size:10px; color:var(--text2); text-transform:uppercase; letter-spacing:0.04em;"></div>
-      </div>
-      <button class="btn btn-sm" onclick="logout()" title="Sign out">Logout</button>
-    </div>
+    <span id="save-indicator" style="display:none;"></span>
   </div>
 </div>
-<!-- Date stamp anchored to the top-right corner, sits just under the
-     topbar / Logout button. Updates on render and quietly self-refreshes
-     so it tracks midnight without a page reload. -->
+
+<!-- Hamza Guide: hide the dormant tracker UI; we show our own content below. -->
+<style>
+  #jobs-mode, #inventory-mode, #reports-mode, #stickers-mode,
+  #station-mode, #forms-mode, #users-mode, #imports-mode,
+  #app-date, #user-chip, #calc-launcher { display: none !important; }
+  .hg-main { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  .hg-card {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 28px 26px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .hg-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .hg-sub   { font-size: 13px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+  .hg-btn-big {
+    background: var(--brand); color: #fff; border: none;
+    padding: 12px 22px; border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: var(--font);
+  }
+  .hg-btn-big:hover { background: var(--brand-dark); }
+</style>
+
+<div id="hg-content" class="hg-main">
+  <div id="hg-calc-pane" class="hg-card">
+    <div class="hg-title">&#129518; Calculator</div>
+    <div class="hg-sub">Paper weight &amp; sheet calculations, plus PO &rarr; sheets &rarr; cartons for jobs. The calculator opens in the top-right corner — click below to bring it up if it's closed.</div>
+    <button class="hg-btn-big" onclick="openCalculator()">Open Calculator</button>
+  </div>
+  <div id="hg-inbox-pane" class="hg-card" style="display:none;">
+    <div class="hg-title">&#9993;&#65039; Inbox</div>
+    <div class="hg-sub">Read your Gmail inside Hamza Guide. <br><br><b>Coming soon</b> — needs a one-time Google Cloud setup (create a project, enable the Gmail API, add OAuth credentials). Tell me when you want to set this up and I'll walk you through it.</div>
+  </div>
+</div>
+
 <div id="app-date" aria-hidden="true"></div>
 
 <div class="main" id="jobs-mode">
@@ -11681,6 +11694,29 @@ function startSmartPolling() {
 }
 
 init();
+
+// ── Hamza Guide tab switcher ───────────────────────────────────
+// Toggles the visible content card (Calculator prompt vs. Inbox placeholder)
+// and updates the topbar tab pills. Auto-opens / closes the floating
+// calculator popover so the two views feel like distinct screens.
+function hgShowTab(name) {
+  const isCalc = name === 'calc';
+  const calcTab  = document.getElementById('hg-tab-calc');
+  const inboxTab = document.getElementById('hg-tab-inbox');
+  if (calcTab)  calcTab.classList.toggle('active',  isCalc);
+  if (inboxTab) inboxTab.classList.toggle('active', !isCalc);
+  const calcPane  = document.getElementById('hg-calc-pane');
+  const inboxPane = document.getElementById('hg-inbox-pane');
+  if (calcPane)  calcPane.style.display  = isCalc ? 'block' : 'none';
+  if (inboxPane) inboxPane.style.display = isCalc ? 'none'  : 'block';
+  if (isCalc) { if (typeof openCalculator  === 'function') openCalculator();  }
+  else        { if (typeof closeCalculator === 'function') closeCalculator(); }
+}
+
+// Open the calculator as soon as the page is ready — it's the main feature.
+window.addEventListener('load', () => {
+  setTimeout(() => { if (typeof openCalculator === 'function') openCalculator(); }, 150);
+});
 </script>
 </body>
 </html>

@@ -350,19 +350,9 @@ const dbReady = initDb();
 // against a real DB without setting up Google OAuth locally. The env var
 // is never set on Vercel, so production remains fully protected.
 function authMiddleware(req, res, next) {
-  if (process.env.DEV_BYPASS_AUTH === '1') {
-    req.user = { id: 0, email: 'dev@local', role: 'admin', name: 'Local Dev', picture: '' };
-    return next();
-  }
-  const token = req.cookies && req.cookies[SESSION_COOKIE];
-  if (token) {
-    try {
-      const payload = jwt.verify(token, JWT_SECRET);
-      req.user = { id: payload.id, email: payload.email, role: payload.role, name: payload.name, picture: payload.picture };
-    } catch (e) {
-      // Invalid/expired token — leave req.user undefined.
-    }
-  }
+  // Hamza Guide: single-user personal app, no login. Always inject the
+  // owner as admin so every downstream requireAuth / requireAdmin passes.
+  req.user = { id: 0, email: 'owner@hamza-guide', role: 'admin', name: 'Hamza', picture: '' };
   next();
 }
 function requireAuth(req, res, next) {
