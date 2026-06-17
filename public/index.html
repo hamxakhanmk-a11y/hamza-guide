@@ -1182,17 +1182,44 @@
   .topbar-brand { white-space: nowrap; }
   .topbar-sub   { white-space: nowrap; }
   .hg-main {
-    max-width: 460px; margin: 0 auto; padding: 1.75rem 1rem 3rem;
+    max-width: 520px; margin: 0 auto; padding: 1rem 1rem 1.5rem;
   }
-  /* Inline-render the calculator instead of pinning it to the top-right. */
+  /* Inline-render the calculator instead of pinning it to the top-right.
+     Fits inside the viewport without page scroll; if any device is too
+     short, the popover itself scrolls internally so the topbar stays
+     fixed and the user never loses their place. */
   #calc-popover {
     position: static !important;
+    display: block !important;
     width: 100% !important;
-    max-width: 460px !important;
-    max-height: none !important;
-    margin: 1.75rem auto 3rem !important;
+    max-width: 520px !important;
+    margin: 0 auto !important;
+    /* viewport - (topbar 56 + main paddings ~32) ≈ leave breathing room */
+    max-height: calc(100vh - 96px) !important;
+    overflow-y: auto !important;
+    padding: 14px 16px !important;
     box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
   }
+  /* Kill the close X + bottom Close button — the calculator IS the view,
+     nothing to dismiss it to. Reset stays. */
+  #calc-popover button[onclick="closeCalculator()"] { display: none !important; }
+  /* Trim chrome: the helper paragraph, the section divider, the
+     "TYPE ANY ONE — …" subtitle. The colored labels already convey
+     the 3-way connection. */
+  #calc-popover > p,
+  #calc-popover hr { display: none !important; }
+  #calc-popover > div[style*="TYPE ANY ONE"],
+  #calc-popover > div[style*="text-transform:uppercase"] { display: none !important; }
+  /* Tighten spacing throughout */
+  #calc-popover h2 { font-size: 15px !important; }
+  #calc-popover .form-group  { margin-bottom: 8px !important; }
+  #calc-popover .form-label  { margin-bottom: 3px !important; font-size: 11px !important; }
+  #calc-popover input,
+  #calc-popover select       { padding: 7px 10px !important; font-size: 13px !important; }
+  /* Make the title bar a single-line header (no flex with close button) */
+  #calc-popover > div:first-child { margin-bottom: 6px !important; }
+  /* Inbox card sits in the same centered slot */
+  .hg-card { margin: 0 auto; max-width: 520px; }
   .hg-card {
     background: var(--bg); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 28px 26px;
