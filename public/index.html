@@ -1171,39 +1171,38 @@
   </div>
 </div>
 
-<!-- Hamza Guide: hide the dormant tracker UI; we show our own content below. -->
+<!-- Hamza Guide: hide the dormant tracker UI; we show our own content below.
+     The floating calc-popover is repositioned inline + centered so it reads
+     like a normal calculator instead of a corner floater. -->
 <style>
   #jobs-mode, #inventory-mode, #reports-mode, #stickers-mode,
   #station-mode, #forms-mode, #users-mode, #imports-mode,
   #app-date, #user-chip, #calc-launcher { display: none !important; }
-  .hg-main { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  .topbar { gap: 0.75rem; }
+  .topbar-brand { white-space: nowrap; }
+  .topbar-sub   { white-space: nowrap; }
+  .hg-main {
+    max-width: 460px; margin: 0 auto; padding: 1.75rem 1rem 3rem;
+  }
+  /* Inline-render the calculator instead of pinning it to the top-right. */
+  #calc-popover {
+    position: static !important;
+    width: 100% !important;
+    max-width: 460px !important;
+    max-height: none !important;
+    margin: 1.75rem auto 3rem !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+  }
   .hg-card {
     background: var(--bg); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 28px 26px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   }
   .hg-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
-  .hg-sub   { font-size: 13px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
-  .hg-btn-big {
-    background: var(--brand); color: #fff; border: none;
-    padding: 12px 22px; border-radius: var(--radius-sm);
-    font-size: 14px; font-weight: 600; cursor: pointer;
-    font-family: var(--font);
-  }
-  .hg-btn-big:hover { background: var(--brand-dark); }
+  .hg-sub   { font-size: 13px; color: var(--text2); line-height: 1.55; }
 </style>
 
 <div id="hg-content" class="hg-main">
-  <div id="hg-paper-pane" class="hg-card">
-    <div class="hg-title">&#129518; Paper Calculator</div>
-    <div class="hg-sub">Pick a paper type, enter sheet size &amp; GSM, then type any one of weight, sheets, or packets &mdash; the other two fill in automatically. The calculator is open in the top-right corner.</div>
-    <button class="hg-btn-big" onclick="openCalculator()">Open Paper Calculator</button>
-  </div>
-  <div id="hg-job-pane" class="hg-card" style="display:none;">
-    <div class="hg-title">&#128203; Job (PO) Calculator</div>
-    <div class="hg-sub">Enter PO quantity, tolerance %, and ups &rarr; calculator returns sheets needed and unit carton qty. The calculator is open in the top-right corner.</div>
-    <button class="hg-btn-big" onclick="openCalculatorJobMode()">Open Job (PO) Calculator</button>
-  </div>
   <div id="hg-inbox-pane" class="hg-card" style="display:none;">
     <div class="hg-title">&#9993;&#65039; Inbox</div>
     <div class="hg-sub">Read your Gmail inside Hamza Guide. <br><br><b>Coming soon</b> &mdash; needs a one-time Google Cloud setup (create a project, enable the Gmail API, add OAuth credentials). Tell me when you want to set this up and I'll walk you through it.</div>
@@ -11702,23 +11701,34 @@ init();
 
 // ── Hamza Guide tab switcher ───────────────────────────────────
 // Three top-level tabs in the fixed topbar: Job (PO), Paper, Inbox.
-// Each one toggles the matching description card AND drives the floating
-// calculator popover into the right mode (or closes it for Inbox).
+// Paper / Job swap the calculator popover into the matching mode and hide
+// the inbox card. Inbox closes the calculator and shows the placeholder.
 function hgShowTab(name) {
   ['job','paper','inbox'].forEach(t => {
     const btn = document.getElementById('hg-tab-' + t);
     if (btn) btn.classList.toggle('active', t === name);
-    const pane = document.getElementById('hg-' + t + '-pane');
-    if (pane) pane.style.display = (t === name) ? 'block' : 'none';
   });
+  const inboxPane = document.getElementById('hg-inbox-pane');
+  if (inboxPane) inboxPane.style.display = (name === 'inbox') ? 'block' : 'none';
   if (name === 'job'   && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
   else if (name === 'paper' && typeof openCalculator    === 'function') openCalculator();
   else if (name === 'inbox' && typeof closeCalculator   === 'function') closeCalculator();
 }
 
+// Move the floating calc popover INTO the main content area so it renders
+// centered in the page flow instead of pinned to the top-right corner.
+function hgPlaceCalcInline() {
+  const pop  = document.getElementById('calc-popover');
+  const main = document.getElementById('hg-content');
+  if (pop && main && pop.parentElement !== main) main.appendChild(pop);
+}
+
 // Open the calculator as soon as the page is ready — it's the main feature.
 window.addEventListener('load', () => {
-  setTimeout(() => { if (typeof openCalculator === 'function') openCalculator(); }, 150);
+  setTimeout(() => {
+    hgPlaceCalcInline();
+    if (typeof openCalculator === 'function') openCalculator();
+  }, 150);
 });
 
 // Safety net: if tracker init() throws for any reason (DB error, missing DOM
