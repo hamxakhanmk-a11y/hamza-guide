@@ -1327,7 +1327,7 @@
         <div class="hg-title">&#127912; Color Measurement</div>
         <div class="hg-sub">Enter Target and Sample CIE L*a*b* readings from the spectrophotometer.</div>
       </div>
-      <div class="color-condition">SCI / D65 / 10&deg;</div>
+      <div id="color-condition" class="color-condition">SCI / D65 / 10&deg; / CIE76</div>
     </div>
     <div class="color-subtabs" role="tablist" aria-label="Color measurement views">
       <button class="color-subtab active" id="color-tab-lab" onclick="colorShowView('lab')">Lab Difference</button>
@@ -11920,6 +11920,18 @@ function colorShowView(view) {
   if (summary) summary.style.display = view === 'lab' ? '' : 'none';
   if (guidance) guidance.style.display = view === 'lab' ? '' : 'none';
 }
+function colorFormulaName(value) {
+  return ({'76':'ΔE*ab', '94':'ΔE94', 'cmc':'ΔE CMC 2:1', '2000':'ΔE00'})[value] || 'ΔE*ab';
+}
+function colorRenderProfile() {
+  const condition = document.getElementById('color-condition');
+  if (!condition) return;
+  const geometry = (document.getElementById('color-geometry') || {}).value || 'SCI';
+  const illuminant = (document.getElementById('color-illuminant') || {}).value || 'D65';
+  const observer = (document.getElementById('color-observer') || {}).value || '10';
+  const formula = (document.getElementById('color-formula') || {}).value || '76';
+  condition.textContent = `${geometry} / ${illuminant} / ${observer}° / ${colorFormulaName(formula)}`;
+}
 function colorDeltaE94(t, s) {
   const dL = s[0] - t[0], c1 = colorChroma(t[1], t[2]), c2 = colorChroma(s[1], s[2]);
   const dC = c2 - c1, dH2 = Math.max(0, (s[1]-t[1])**2 + (s[2]-t[2])**2 - dC**2);
@@ -11969,6 +11981,7 @@ function colorReset() {
   if (first) first.focus();
 }
 function colorRecalculate() {
+  colorRenderProfile();
   const target = ['l','a','b'].map(k => colorNumber('color-target-' + k));
   const sample = ['l','a','b'].map(k => colorNumber('color-sample-' + k));
   const base = colorNumber('color-base-de');
@@ -12058,6 +12071,11 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     hgRenderHero();
     hgPlaceCalcInline();
+    ['color-geometry','color-illuminant','color-observer'].forEach(id => {
+      const select = document.getElementById(id);
+      if (select) select.addEventListener('change', colorRecalculate);
+    });
+    colorRenderProfile();
     if (typeof openCalculator === 'function') openCalculator();
   }, 150);
 });
