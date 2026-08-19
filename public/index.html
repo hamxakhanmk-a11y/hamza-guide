@@ -1307,12 +1307,28 @@
   .color-setup-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
   .color-note { background:var(--bg2); border-left:3px solid var(--brand); border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:12px; color:var(--text2); font-size:12px; line-height:1.55; }
   .color-spectrum-empty { text-align:center; padding:28px 14px; border:1px dashed var(--border2); border-radius:var(--radius-sm); color:var(--text2); font-size:13px; line-height:1.6; }
+  .meter-settings-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .meter-settings-head h3 { margin:0; font-size:19px; color:var(--text); }
+  .meter-settings-reset { border:0; background:transparent; color:var(--brand); font:700 13px var(--font); cursor:pointer; }
+  .meter-setting-tabs { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid var(--border); margin-bottom:16px; }
+  .meter-setting-tab { border:0; background:transparent; padding:10px 5px; color:var(--text2); font:700 13px var(--font); cursor:pointer; border-bottom:3px solid transparent; }
+  .meter-setting-tab.active { color:var(--brand); border-bottom-color:var(--brand); }
+  .meter-section-title { color:var(--brand); font-size:15px; font-weight:750; margin:17px 0 7px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+  .meter-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(118px,.9fr); align-items:center; gap:12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:8px; }
+  .meter-row label, .meter-row .meter-label { font-size:13px; font-weight:650; color:var(--text); }
+  .meter-row select, .meter-row input { margin:0; padding:7px 9px; min-width:0; font-size:13px; }
+  .meter-readonly { color:var(--text2); text-align:right; font-size:13px; font-weight:650; }
+  .meter-choice { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .meter-choice button { padding:10px; border:1px solid var(--border2); border-radius:var(--radius-sm); background:#fff; color:var(--text2); font:700 13px var(--font); cursor:pointer; }
+  .meter-choice button.active { border-color:var(--brand); color:var(--brand); background:var(--brand-soft); }
   @media (max-width:700px) {
     .color-tolerance, .color-inputs, .color-results { grid-template-columns:1fr; }
     .color-card { padding:16px !important; }
     .color-head { margin-bottom:14px; }
     .color-condition { font-size:10px; }
     .color-setup-grid { grid-template-columns:1fr; }
+    .meter-row { grid-template-columns:1fr; gap:6px; }
+    .meter-readonly { text-align:left; }
   }
 </style>
 
@@ -11917,19 +11933,75 @@ function colorShowView(view) {
   });
   const summary = document.getElementById('color-lab-summary');
   const guidance = document.getElementById('color-guidance');
+  const quickTolerance = document.querySelector('#hg-color-pane > .color-tolerance');
+  const labInputs = document.querySelector('#hg-color-pane > .color-inputs');
   if (summary) summary.style.display = view === 'lab' ? '' : 'none';
   if (guidance) guidance.style.display = view === 'lab' ? '' : 'none';
+  if (quickTolerance) quickTolerance.style.display = view === 'setup' ? 'none' : '';
+  if (labInputs) labInputs.style.display = view === 'setup' ? 'none' : '';
+  if (view === 'setup') colorBuildSettingsPanel();
 }
+function colorBuildSettingsPanel() {
+  const pane = document.getElementById('color-setup-pane');
+  if (!pane || pane.dataset.built) return;
+  pane.dataset.built = 'true';
+  pane.innerHTML = `<div class="meter-settings-head"><h3>Color Settings</h3><button class="meter-settings-reset" type="button" onclick="colorResetSettings()">Reset</button></div>
+    <div class="meter-setting-tabs"><button class="meter-setting-tab active" id="meter-tab-parameter" onclick="colorSettingsView('parameter')">Parameter</button><button class="meter-setting-tab" id="meter-tab-tolerance" onclick="colorSettingsView('tolerance')">Tolerance</button><button class="meter-setting-tab" id="meter-tab-others" onclick="colorSettingsView('others')">Others</button></div><div id="meter-settings-content"></div>`;
+  colorSettingsView('parameter');
+}
+function colorSettingsView(view) {
+  ['parameter','tolerance','others'].forEach(name => { const tab=document.getElementById('meter-tab-'+name); if(tab) tab.classList.toggle('active',name===view); });
+  const out=document.getElementById('meter-settings-content'); if(!out) return;
+  if (view === 'parameter') out.innerHTML = `
+    <div class="meter-section-title">Measurement</div>
+    <div class="meter-row"><span class="meter-label">Reflectance / Transmittance</span><span class="meter-readonly">Reflectance</span></div>
+    <div class="meter-row"><label for="color-geometry">Test Mode</label><select id="color-geometry" onchange="colorRecalculate()"><option selected>SCI</option><option>SCE</option></select></div>
+    <div class="meter-section-title">Display Settings</div>
+    <div class="meter-row"><span class="meter-label">Color Space</span><span class="meter-readonly">CIE Lab / CIE LCh</span></div>
+    <div class="meter-row"><label for="color-formula">Color Difference</label><select id="color-formula" onchange="colorRecalculate()"><option value="76">ΔE*ab / CIE76</option><option value="94">ΔE94</option><option value="cmc">ΔE CMC</option><option value="2000">ΔE00</option></select></div>
+    <div class="meter-section-title">Light Source / Angle</div>
+    <div class="meter-row"><label for="color-illuminant">1st Light Source</label><select id="color-illuminant" onchange="colorRecalculate()"><option>A</option><option>C</option><option>D50</option><option>D55</option><option selected>D65</option><option>D75</option><option>F1</option><option>F2</option><option>F3</option><option>F4</option><option>F5</option><option>F6</option><option>F7</option><option>F8</option><option>F9</option><option>F10</option><option>F11</option><option>F12</option><option>CWF</option><option>U30</option></select></div>
+    <div class="meter-row"><label for="color-observer">1st Angle</label><select id="color-observer" onchange="colorRecalculate()"><option value="2">2°</option><option value="10" selected>10°</option></select></div>
+    <div class="meter-row"><span class="meter-label">2nd Light / Angle</span><span class="meter-readonly">A / 2° &mdash; comparison reference</span></div>`;
+  else if (view === 'tolerance') out.innerHTML = `
+    <div class="meter-section-title">Overall Difference</div>
+    <div class="meter-row"><label for="meter-base-de">ΔE Limit</label><input id="meter-base-de" type="number" min=".01" step=".01" value="2.00" inputmode="decimal" oninput="colorSetQuick('color-base-de',this.value)"></div>
+    <div class="meter-row"><label for="meter-tolerance-pct">Tolerance %</label><input id="meter-tolerance-pct" type="number" min="1" max="500" value="100" inputmode="numeric" oninput="colorSetQuick('color-tolerance-pct',this.value)"></div>
+    <div class="meter-row"><span class="meter-label">Final Allowed ΔE</span><span id="meter-final-de" class="meter-readonly">2.00</span></div>
+    <div class="meter-section-title">CIE Lab Component Limits</div>
+    <div class="meter-row"><label for="meter-tol-l">|ΔL*| &mdash; light / dark</label><input id="meter-tol-l" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-l',this.value)"></div>
+    <div class="meter-row"><label for="meter-tol-a">|Δa*| &mdash; red / green</label><input id="meter-tol-a" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-a',this.value)"></div>
+    <div class="meter-row"><label for="meter-tol-b">|Δb*| &mdash; yellow / blue</label><input id="meter-tol-b" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-b',this.value)"></div>
+    <div class="meter-row"><label for="meter-tol-c">|ΔC*| &mdash; chroma</label><input id="meter-tol-c" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-c',this.value)"></div>
+    <div class="meter-row"><label for="meter-tol-h">ΔH* &mdash; hue</label><input id="meter-tol-h" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-h',this.value)"></div>`;
+  else out.innerHTML = `<div class="meter-section-title">Average</div><div class="meter-choice"><button id="meter-single" class="active" type="button" onclick="colorAverageMode('single')">Single</button><button id="meter-average" type="button" onclick="colorAverageMode('average')">Average</button></div><div class="meter-section-title">Naming Rules</div><div class="meter-row"><label for="color-target-name">Target Name</label><input id="color-target-name" type="text" value="Target"></div><div class="meter-row"><label for="color-sample-name">Sample Name</label><input id="color-sample-name" type="text" value="Sample"></div><div class="color-note" style="margin-top:12px;">Average mode and saved reading names will become active when we add measurement history and instrument import.</div>`;
+  if (view === 'parameter') {
+    [['color-geometry','geometry'],['color-illuminant','illuminant'],['color-observer','observer'],['color-formula','formula']].forEach(([id,key]) => { const el=document.getElementById(id); if(el) el.value=colorProfileState[key]; });
+  }
+  if (view === 'tolerance') {
+    [['color-base-de','meter-base-de'],['color-tolerance-pct','meter-tolerance-pct'],['color-tol-l','meter-tol-l'],['color-tol-a','meter-tol-a'],['color-tol-b','meter-tol-b'],['color-tol-c','meter-tol-c'],['color-tol-h','meter-tol-h']].forEach(([source,target]) => { const a=document.getElementById(source),b=document.getElementById(target); if(a&&b)b.value=a.value; });
+  }
+  colorRecalculate();
+}
+function colorAverageMode(mode) { ['single','average'].forEach(name=>{const b=document.getElementById('meter-'+name);if(b)b.classList.toggle('active',name===mode);}); }
+function colorSetQuick(id, value) { const source=document.getElementById(id); if(source) source.value=value; colorRecalculate(); }
+function colorResetSettings() { const pane=document.getElementById('color-setup-pane'); if(pane) { delete pane.dataset.built; pane.innerHTML=''; } colorBuildSettingsPanel(); colorRecalculate(); }
 function colorFormulaName(value) {
   return ({'76':'ΔE*ab', '94':'ΔE94', 'cmc':'ΔE CMC 2:1', '2000':'ΔE00'})[value] || 'ΔE*ab';
+}
+const colorProfileState = { geometry:'SCI', illuminant:'D65', observer:'10', formula:'76' };
+function colorProfileValue(id, key) {
+  const el = document.getElementById(id);
+  if (el && el.value) colorProfileState[key] = el.value;
+  return colorProfileState[key];
 }
 function colorRenderProfile() {
   const condition = document.getElementById('color-condition');
   if (!condition) return;
-  const geometry = (document.getElementById('color-geometry') || {}).value || 'SCI';
-  const illuminant = (document.getElementById('color-illuminant') || {}).value || 'D65';
-  const observer = (document.getElementById('color-observer') || {}).value || '10';
-  const formula = (document.getElementById('color-formula') || {}).value || '76';
+  const geometry = colorProfileValue('color-geometry', 'geometry');
+  const illuminant = colorProfileValue('color-illuminant', 'illuminant');
+  const observer = colorProfileValue('color-observer', 'observer');
+  const formula = colorProfileValue('color-formula', 'formula');
   condition.textContent = `${geometry} / ${illuminant} / ${observer}° / ${colorFormulaName(formula)}`;
 }
 function colorDeltaE94(t, s) {
@@ -11995,6 +12067,8 @@ function colorRecalculate() {
   const allowed = Number.isFinite(base) && base > 0 && Number.isFinite(pct) && pct > 0 ? base * pct / 100 : null;
   const finalLimit = document.getElementById('color-final-de');
   if (finalLimit) finalLimit.textContent = allowed ? colorFmt(allowed) : '—';
+  const meterFinalLimit = document.getElementById('meter-final-de');
+  if (meterFinalLimit) meterFinalLimit.textContent = allowed ? colorFmt(allowed) : '—';
 
   if (!complete) {
     if (status) status.className = 'color-status';
@@ -12009,7 +12083,7 @@ function colorRecalculate() {
   const [tL, ta, tb] = target;
   const [sL, sa, sb] = sample;
   const dL = sL - tL, da = sa - ta, db = sb - tb;
-  const formula = (document.getElementById('color-formula') || {}).value || '76';
+  const formula = colorProfileValue('color-formula', 'formula');
   const deltaE76 = Math.sqrt(dL * dL + da * da + db * db);
   const deltaE = formula === '94' ? colorDeltaE94(target, sample) : formula === 'cmc' ? colorDeltaECmc(target, sample) : formula === '2000' ? colorDeltaE2000(target, sample) : deltaE76;
   const targetC = colorChroma(ta, tb), sampleC = colorChroma(sa, sb);
