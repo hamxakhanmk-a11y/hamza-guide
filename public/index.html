@@ -1401,7 +1401,7 @@
       <div id="color-lch-guidance" class="color-guidance">Enter Target and Sample readings to explain the chroma and hue change.</div>
     </div>
     <div id="color-profiles-pane" class="color-extra-pane"></div>
-    <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-cmyk-baseline"><div class="form-group"><label class="form-label" for="color-icc-profile">CMYK Baseline Profile</label><select id="color-icc-profile" onchange="colorRecalculate()"><option value="coated" selected>PSO Coated v3 — FOGRA51 (coated stock)</option><option value="uncoated">PSO Uncoated v3 — FOGRA52 (uncoated stock)</option></select></div></div><div class="color-cmyk-grid"><div class="color-cmyk-card"><div class="color-cmyk-title">Target — ICC CMYK</div><div class="color-cmyk-values"><div class="color-cmyk-value"><b><i class="cmyk-chip c"></i>C</b><span id="color-target-cmyk-c">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip m"></i>M</b><span id="color-target-cmyk-m">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip y"></i>Y</b><span id="color-target-cmyk-y">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip k"></i>K</b><span id="color-target-cmyk-k">—</span></div></div></div><div class="color-cmyk-card"><div class="color-cmyk-title">Sample — ICC CMYK</div><div class="color-cmyk-values"><div class="color-cmyk-value"><b><i class="cmyk-chip c"></i>C</b><span id="color-sample-cmyk-c">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip m"></i>M</b><span id="color-sample-cmyk-m">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip y"></i>Y</b><span id="color-sample-cmyk-y">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip k"></i>K</b><span id="color-sample-cmyk-k">—</span></div></div></div></div><div id="color-cmyk-note" class="color-note" style="margin-top:12px;"><b>FOGRA ICC baseline.</b> This is an industry-standard offset estimate for the selected stock condition. It is not yet calibrated to your own press.</div></div>
+    <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-cmyk-baseline"><div class="form-group"><label class="form-label" for="color-icc-profile">CMYK Baseline Profile</label><select id="color-icc-profile" onchange="colorRecalculate()"><optgroup label="European offset"><option value="coated" selected>PSO Coated v3 — FOGRA51 (coated stock)</option><option value="uncoated">PSO Uncoated v3 — FOGRA52 (uncoated stock)</option><option value="fogra39">FOGRA39 / ISO Coated v2 (legacy coated)</option><option value="fogra31" disabled>FOGRA31 (legacy business forms — reference only)</option></optgroup><optgroup label="United States"><option value="gracol">GRACoL 2013 / CRPC6</option><option value="swop">SWOP 2013 / CRPC5</option></optgroup></select></div></div><div class="color-cmyk-grid"><div class="color-cmyk-card"><div class="color-cmyk-title">Target — ICC CMYK</div><div class="color-cmyk-values"><div class="color-cmyk-value"><b><i class="cmyk-chip c"></i>C</b><span id="color-target-cmyk-c">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip m"></i>M</b><span id="color-target-cmyk-m">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip y"></i>Y</b><span id="color-target-cmyk-y">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip k"></i>K</b><span id="color-target-cmyk-k">—</span></div></div></div><div class="color-cmyk-card"><div class="color-cmyk-title">Sample — ICC CMYK</div><div class="color-cmyk-values"><div class="color-cmyk-value"><b><i class="cmyk-chip c"></i>C</b><span id="color-sample-cmyk-c">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip m"></i>M</b><span id="color-sample-cmyk-m">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip y"></i>Y</b><span id="color-sample-cmyk-y">—</span></div><div class="color-cmyk-value"><b><i class="cmyk-chip k"></i>K</b><span id="color-sample-cmyk-k">—</span></div></div></div></div><div id="color-cmyk-note" class="color-note" style="margin-top:12px;"><b>FOGRA ICC baseline.</b> This is an industry-standard offset estimate for the selected stock condition. It is not yet calibrated to your own press.</div></div>
     <div id="color-spectrum-pane" class="color-extra-pane"><div class="color-spectrum-empty"><b>Spectrum data not entered</b><br>To draw the real Target/Sample graph, enter or import the spectrophotometer reflectance values for each wavelength (for example 400–700 nm). Lab values alone cannot create a genuine spectral curve.</div></div>
     <div id="color-setup-pane" class="color-extra-pane"><div class="color-setup-grid"><div class="form-group"><label class="form-label">Difference Formula</label><select id="color-formula" onchange="colorRecalculate()"><option value="76">&Delta;E*ab / CIE76</option><option value="94">&Delta;E94 (graphic arts)</option><option value="cmc">&Delta;E CMC (2:1)</option><option value="2000">&Delta;E00 / CIEDE2000</option></select></div><div class="form-group"><label class="form-label">Geometry</label><select id="color-geometry"><option selected>SCI</option><option>SCE</option></select></div><div class="form-group"><label class="form-label">Observer Angle</label><select id="color-observer"><option value="10" selected>10&deg;</option><option value="2">2&deg;</option></select></div><div class="form-group"><label class="form-label">Illuminant</label><select id="color-illuminant"><option>A</option><option>C</option><option>D50</option><option>D55</option><option selected>D65</option><option>D75</option><option>F1</option><option>F2</option><option>F3</option><option>F4</option><option>F5</option><option>F6</option><option>F7</option><option>F8</option><option>F9</option><option>F10</option><option>F11</option><option>F12</option><option>CWF</option><option>U30</option></select></div></div><div class="color-note" style="margin-top:12px;">Optional component limits &mdash; leave blank to disable that check.</div><div class="color-setup-grid" style="margin-top:10px;"><div class="form-group"><label class="form-label">|&Delta;L*| limit</label><input id="color-tol-l" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;a*| limit</label><input id="color-tol-a" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;b*| limit</label><input id="color-tol-b" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;C*| limit</label><input id="color-tol-c" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">&Delta;H* limit</label><input id="color-tol-h" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div></div><div class="color-note" style="margin-top:12px;">Use the exact geometry, illuminant, and observer shown by the instrument for this reading. Changing these settings does not transform an existing Lab reading; it documents the condition under which it was measured.</div></div>
     <div class="color-actions"><button class="btn btn-sm" type="button" onclick="colorReset()">Reset reading</button></div>
@@ -12105,7 +12105,10 @@ function colorSetCmyk(prefix, values, emptyText = '—') {
 const colorIccState = { ready:null, engine:null, labProfile:null, profiles:{}, transforms:{}, request:0 };
 const colorIccProfiles = {
   coated: { path:'/icc/PSOcoated_v3.icc', label:'PSO Coated v3 / FOGRA51' },
-  uncoated: { path:'/icc/PSOuncoated_v3_FOGRA52.icc', label:'PSO Uncoated v3 / FOGRA52' }
+  uncoated: { path:'/icc/PSOuncoated_v3_FOGRA52.icc', label:'PSO Uncoated v3 / FOGRA52' },
+  fogra39: { path:'/icc/Coated_Fogra39L_VIGC_260.icc', label:'FOGRA39 / ISO Coated v2' },
+  gracol: { path:'/icc/GRACoL2013_CRPC6.icc', label:'GRACoL 2013 / CRPC6' },
+  swop: { path:'/icc/SWOP2013C3_CRPC5.icc', label:'SWOP 2013 / CRPC5' }
 };
 function colorIccProfileKey() {
   const select = document.getElementById('color-icc-profile');
@@ -12126,18 +12129,22 @@ async function colorLoadIcc() {
     const engine = await module.instantiate({ locateFile:name => '/vendor/lcms/' + name });
     colorIccState.engine = engine;
     colorIccState.labProfile = engine.cmsCreateLab4Profile();
-    await Promise.all(Object.entries(colorIccProfiles).map(async ([key, profile]) => {
-      const response = await fetch(profile.path);
-      if (!response.ok) throw new Error(`Could not load ${profile.label}`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      const handle = engine.cmsOpenProfileFromMem(bytes, bytes.byteLength);
-      if (!handle) throw new Error(`Could not open ${profile.label}`);
-      colorIccState.profiles[key] = handle;
-      colorIccState.transforms[key] = engine.cmsCreateTransform(colorIccState.labProfile, module.TYPE_Lab_16, handle, module.TYPE_CMYK_8, module.INTENT_RELATIVE_COLORIMETRIC, 0);
-    }));
     return module;
   })();
   return colorIccState.ready;
+}
+async function colorLoadIccProfile(key) {
+  const module = await colorLoadIcc();
+  if (colorIccState.transforms[key]) return;
+  const profile = colorIccProfiles[key];
+  if (!profile) throw new Error('Unsupported ICC profile');
+  const response = await fetch(profile.path);
+  if (!response.ok) throw new Error(`Could not load ${profile.label}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const handle = colorIccState.engine.cmsOpenProfileFromMem(bytes, bytes.byteLength);
+  if (!handle) throw new Error(`Could not open ${profile.label}`);
+  colorIccState.profiles[key] = handle;
+  colorIccState.transforms[key] = colorIccState.engine.cmsCreateTransform(colorIccState.labProfile, module.TYPE_Lab_16, handle, module.TYPE_CMYK_8, module.INTENT_RELATIVE_COLORIMETRIC, 0);
 }
 async function colorApplyIccCmyk(target, sample) {
   const request = ++colorIccState.request;
@@ -12146,7 +12153,7 @@ async function colorApplyIccCmyk(target, sample) {
   colorSetCmyk('target', null, '…'); colorSetCmyk('sample', null, '…');
   if (note) note.innerHTML = '<b>Loading ICC baseline…</b> Converting Lab through the selected FOGRA profile.';
   try {
-    await colorLoadIcc();
+    await colorLoadIccProfile(key);
     if (request !== colorIccState.request) return;
     const transform = colorIccState.transforms[key];
     const convert = value => Array.from(colorIccState.engine.cmsDoTransform(transform, colorIccEncodeLab(value), 1), channel => Math.round(channel / 255 * 100));
