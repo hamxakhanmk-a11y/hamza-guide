@@ -2375,6 +2375,16 @@ app.post('/api/press-profiles', requireWriteUser, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
+app.delete('/api/press-profiles/:id', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const sql = getDb();
+    const rows = await sql`DELETE FROM press_profiles WHERE id=${req.params.id} RETURNING id`;
+    if (!rows.length) return res.status(404).json({ error: 'Press profile not found' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
