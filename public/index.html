@@ -11959,15 +11959,42 @@ function colorShowView(view) {
   if (quickTolerance) quickTolerance.style.display = (view === 'setup' || view === 'profiles') ? 'none' : '';
   if (labInputs) labInputs.style.display = (view === 'setup' || view === 'profiles') ? 'none' : '';
   if (view === 'profiles') colorRenderPressProfiles();
+  if (view === 'lab') colorLoadPressProfileSelector();
   if (view === 'setup') colorBuildSettingsPanel();
 }
 let colorPressProfiles = [];
+let colorPressProfilesLoaded = false;
+async function colorLoadPressProfileSelector() {
+  const select = document.getElementById('color-active-press-profile');
+  if (!select) return;
+  const selected = select.value;
+  try {
+    if (!colorPressProfilesLoaded) {
+      colorPressProfiles = await api('GET','/api/press-profiles');
+      colorPressProfilesLoaded = true;
+    }
+    select.innerHTML = `<option value="">No saved press profile selected</option>${colorPressProfiles.map(profile => `<option value="${profile.id}">${esc(profile.name)} — ${esc(profile.paper_type||'paper not entered')}</option>`).join('')}`;
+    if (colorPressProfiles.some(profile => String(profile.id) === selected)) select.value = selected;
+  } catch (error) { console.error('Could not load press-profile selector:', error); }
+}
+function colorSuggestedIccForPress(profile) {
+  const condition = `${profile.paper_type||''} ${profile.coating||''} ${profile.print_side||''}`.toLowerCase();
+  return /uncoated|off white|offset paper/.test(condition) ? 'uncoated' : 'coated';
+}
+function colorApplyActivePressProfile() {
+  const select = document.getElementById('color-active-press-profile');
+  const profile = colorPressProfiles.find(item => String(item.id) === String(select && select.value));
+  const icc = document.getElementById('color-icc-profile');
+  if (profile && icc) icc.value = colorSuggestedIccForPress(profile);
+  colorRecalculate();
+}
 async function colorRenderPressProfiles() {
   const pane = document.getElementById('color-profiles-pane');
   if (!pane) return;
   pane.innerHTML = `<div class="color-head"><div><div class="hg-title">Press Profiles</div><div class="hg-sub">Save each real press, ink and board condition separately. Calibration patches added tomorrow will belong to one of these profiles.</div></div><button class="btn btn-primary btn-sm" onclick="colorOpenPressProfileForm()">+ New Profile</button></div><div class="color-spectrum-empty">Loading profiles…</div>`;
   try {
     colorPressProfiles = await api('GET','/api/press-profiles');
+    colorPressProfilesLoaded = true;
     const cards = colorPressProfiles.length ? colorPressProfiles.map(p => `<div class="color-panel" style="margin-bottom:9px;"><div class="color-panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;"><span>${esc(p.name)}</span><button class="btn btn-sm" style="color:var(--brand);" onclick="colorDeletePressProfile(${p.id})">Delete</button></div><div style="padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.7;"><b>Machine:</b> ${esc(p.machine||'Not entered')} &nbsp;·&nbsp; <b>Paper:</b> ${esc(p.paper_type||'Not entered')} ${p.gsm?esc(p.gsm)+' gsm':''}<br><b>Coating / print side:</b> ${esc(p.coating||'Not entered')} / ${esc(p.print_side||'Not entered')}<br><b>Ink:</b> ${esc(p.ink_system||'Not entered')} ${p.ink_strength?'· '+esc(p.ink_strength)+'% strength':''}</div><div style="padding:0 12px 11px;"><button class="btn btn-primary btn-sm" onclick="colorOpenCalibration(${p.id})">Add calibration data</button></div></div>`).join('') : `<div class="color-spectrum-empty"><b>No press profiles yet</b><br>Create one for each machine + paper/coating + ink condition. Example: “Heidelberg · Duplex Board · coated side · 300 gsm”.</div>`;
     pane.innerHTML = `<div class="color-head"><div><div class="hg-title">Press Profiles</div><div class="hg-sub">Calibration data is always tied to one real printing condition.</div></div><button class="btn btn-primary btn-sm" onclick="colorOpenPressProfileForm()">+ New Profile</button></div>${cards}`;
   } catch (e) { pane.innerHTML = `<div class="color-spectrum-empty">Could not load profiles: ${esc(e.message)}</div>`; }
