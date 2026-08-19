@@ -12134,7 +12134,6 @@ function colorRecalculate() {
   const dC = sampleC-targetC, dH = Math.sqrt(Math.max(0, deltaE76**2-dL**2-dC**2));
   const componentChecks = [['L', dL, 'color-tol-l'], ['a', da, 'color-tol-a'], ['b', db, 'color-tol-b'], ['C', dC, 'color-tol-c'], ['H', dH, 'color-tol-h']];
   const componentFailures = componentChecks.filter(([,difference,id]) => { const limit=colorNumber(id); return Number.isFinite(limit) && Math.abs(difference)>limit; }).map(([name]) => 'Δ'+name+'*');
-  const consumed = allowed ? deltaE / allowed * 100 : null;
   const passes = allowed ? deltaE <= allowed && componentFailures.length === 0 : false;
 
   document.getElementById('color-deltas').textContent = `${colorSigned(dL)} / ${colorSigned(da)} / ${colorSigned(db)}`;
@@ -12163,8 +12162,8 @@ function colorRecalculate() {
   if (label) label.textContent = passes ? 'Color match passed' : 'Color match failed';
   if (value) value.textContent = `${passes ? 'PASS' : 'FAIL'} · ΔE ${colorFmt(deltaE)}`;
   if (detail) detail.textContent = allowed
-    ? `Tolerance limit: ΔE ${colorFmt(allowed)}. Tolerance used: ${colorFmt(consumed, 0)}%.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
-    : 'Set a valid base ΔE limit and tolerance percentage.';
+    ? `Allowed ΔE: ${colorFmt(allowed)}. Measured ΔE: ${colorFmt(deltaE)}.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
+    : 'Set a valid ΔE tolerance limit.';
 
   const lightness = colorDirection(dL, `Sample is lighter by ${colorFmt(Math.abs(dL))}.`, `Sample is darker by ${colorFmt(Math.abs(dL))}.`, 'Lightness matches.');
   const redGreen = colorDirection(da, `It is redder by ${colorFmt(Math.abs(da))}.`, `It is greener by ${colorFmt(Math.abs(da))}.`, 'Red/green position matches.');
