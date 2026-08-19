@@ -1273,6 +1273,7 @@
   .color-condition { font-size:11px; font-weight:700; color:var(--brand-dark); background:var(--brand-soft); padding:6px 8px; border-radius:5px; white-space:nowrap; }
   .color-tolerance { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:10px; padding:12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:14px; }
   .color-tolerance .form-group { margin:0; }
+  .color-readout { min-height:35px; display:flex; align-items:center; padding:7px 10px; border:1px solid var(--border2); border-radius:var(--radius-sm); background:#fff; color:var(--brand-dark); font-size:14px; font-weight:750; }
   .color-inputs { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
   .color-panel { border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:#fff; }
   .color-panel-title { padding:9px 12px; font-size:13px; font-weight:700; background:var(--bg2); border-bottom:1px solid var(--border); }
@@ -1336,9 +1337,9 @@
       <button class="color-subtab" id="color-tab-setup" onclick="colorShowView('setup')">Setup</button>
     </div>
     <div class="color-tolerance">
-      <div class="form-group"><label class="form-label" for="color-standard">Base &Delta;E Standard</label><select id="color-standard" onchange="colorApplyStandard()"><option value="1">Very strict &middot; &Delta;E 1.0</option><option value="2" selected>Standard &middot; &Delta;E 2.0</option><option value="3">Commercial &middot; &Delta;E 3.0</option><option value="5">Flexible &middot; &Delta;E 5.0</option></select></div>
-      <div class="form-group"><label class="form-label" for="color-base-de">Base &Delta;E Limit</label><input id="color-base-de" type="number" min="0.01" step="0.01" value="2.00" inputmode="decimal" oninput="colorRecalculate()"></div>
+      <div class="form-group"><label class="form-label" for="color-base-de">&Delta;E Limit</label><input id="color-base-de" type="number" min="0.01" step="0.01" value="2.00" inputmode="decimal" oninput="colorRecalculate()"></div>
       <div class="form-group"><label class="form-label" for="color-tolerance-pct">Tolerance %</label><input id="color-tolerance-pct" type="number" min="1" max="500" step="1" value="100" inputmode="numeric" oninput="colorRecalculate()"></div>
+      <div class="form-group"><label class="form-label">Final Allowed &Delta;E</label><div id="color-final-de" class="color-readout">2.00</div></div>
     </div>
     <div class="color-inputs">
       <div class="color-panel target"><div class="color-panel-title">Target</div><div class="color-fields">
@@ -11979,6 +11980,8 @@ function colorRecalculate() {
   const guidance = document.getElementById('color-guidance');
   const complete = target.every(Number.isFinite) && sample.every(Number.isFinite);
   const allowed = Number.isFinite(base) && base > 0 && Number.isFinite(pct) && pct > 0 ? base * pct / 100 : null;
+  const finalLimit = document.getElementById('color-final-de');
+  if (finalLimit) finalLimit.textContent = allowed ? colorFmt(allowed) : '—';
 
   if (!complete) {
     if (status) status.className = 'color-status';
@@ -12020,7 +12023,7 @@ function colorRecalculate() {
   if (label) label.textContent = passes ? 'Color match passed' : 'Color match failed';
   if (value) value.textContent = `${passes ? 'PASS' : 'FAIL'} · ΔE ${colorFmt(deltaE)}`;
   if (detail) detail.textContent = allowed
-    ? `Allowed ΔE: ${colorFmt(allowed)} (${colorFmt(base)} base × ${colorFmt(pct, 0)}%). Tolerance used: ${colorFmt(consumed, 0)}%.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
+    ? `Allowed ΔE: ${colorFmt(allowed)} (${colorFmt(base)} limit × ${colorFmt(pct, 0)}%). Tolerance used: ${colorFmt(consumed, 0)}%.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
     : 'Set a valid base ΔE limit and tolerance percentage.';
 
   const lightness = colorDirection(dL, `Sample is lighter by ${colorFmt(Math.abs(dL))}.`, `Sample is darker by ${colorFmt(Math.abs(dL))}.`, 'Lightness matches.');
