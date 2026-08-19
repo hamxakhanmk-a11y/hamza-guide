@@ -1,7 +1,6 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
@@ -63,10 +62,12 @@ function iccLab16(values) {
 async function getIccEngine() {
   if (iccEngineState.ready) return iccEngineState.ready;
   iccEngineState.ready = (async () => {
-    const lcmsPath = path.join(__dirname, 'public', 'vendor', 'lcms', 'lcms.min.js');
-    const lcms = await import(pathToFileURL(lcmsPath).href);
+    // A normal package import lets Vercel trace and bundle the engine.
+    // Loading this JavaScript from public/ worked locally but could hang in
+    // the production function's file bundle.
+    const lcms = await import('lcms-wasm');
     const engine = await lcms.instantiate({
-      locateFile: (name) => path.join(__dirname, 'public', 'vendor', 'lcms', name),
+      locateFile: (name) => path.join(__dirname, 'node_modules', 'lcms-wasm', 'dist', name),
     });
     iccEngineState.engine = engine;
     iccEngineState.labProfile = engine.cmsCreateLab4Profile();
