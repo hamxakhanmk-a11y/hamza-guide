@@ -1158,6 +1158,7 @@
     <div class="mode-switch" id="hg-tabs">
       <button class="mode-btn"        id="hg-tab-job"   onclick="hgShowTab('job')">&#128203; Job (PO)</button>
       <button class="mode-btn active" id="hg-tab-paper" onclick="hgShowTab('paper')">&#129518; Paper</button>
+      <button class="mode-btn"        id="hg-tab-color" onclick="hgShowTab('color')">&#127912; Color</button>
       <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
     </div>
   </div>
@@ -1264,6 +1265,41 @@
   }
   .hg-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
   .hg-sub   { font-size: 13px; color: var(--text2); line-height: 1.55; }
+  /* Color measurement module ------------------------------------------------
+     Lab is the source-of-truth. We intentionally do not infer CMYK here:
+     that needs the real press/profile/paper calibration data. */
+  .color-card { max-width: 780px; }
+  .color-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:18px; }
+  .color-condition { font-size:11px; font-weight:700; color:var(--brand-dark); background:var(--brand-soft); padding:6px 8px; border-radius:5px; white-space:nowrap; }
+  .color-tolerance { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:10px; padding:12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:14px; }
+  .color-tolerance .form-group { margin:0; }
+  .color-inputs { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+  .color-panel { border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:#fff; }
+  .color-panel-title { padding:9px 12px; font-size:13px; font-weight:700; background:var(--bg2); border-bottom:1px solid var(--border); }
+  .color-panel.target .color-panel-title { color:var(--brand-dark); }
+  .color-panel.sample .color-panel-title { color:#166534; }
+  .color-fields { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:11px; }
+  .color-fields .form-group { margin:0; }
+  .color-fields input { text-align:center; font-weight:650; font-size:15px; }
+  .color-results { display:grid; grid-template-columns:1.15fr 1fr; gap:12px; }
+  .color-status { border-radius:var(--radius-sm); padding:16px; color:#fff; background:#6b6960; min-height:145px; }
+  .color-status.pass { background:#166534; }
+  .color-status.fail { background:var(--brand); }
+  .color-status-label { font-size:11px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; opacity:.85; }
+  .color-status-value { font-size:32px; font-weight:800; line-height:1.15; margin:4px 0 8px; }
+  .color-status-detail { font-size:12px; line-height:1.5; opacity:.96; }
+  .color-data { border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+  .color-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; padding:8px 10px; border-bottom:1px solid var(--border); font-size:12px; }
+  .color-row:last-child { border-bottom:0; }
+  .color-row.head { background:var(--bg2); color:var(--text2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .color-guidance { margin-top:12px; border-left:3px solid var(--brand); padding:9px 11px; background:var(--bg2); color:var(--text2); font-size:12px; line-height:1.55; border-radius:0 var(--radius-sm) var(--radius-sm) 0; }
+  .color-actions { display:flex; justify-content:flex-end; margin-top:12px; }
+  @media (max-width:700px) {
+    .color-tolerance, .color-inputs, .color-results { grid-template-columns:1fr; }
+    .color-card { padding:16px !important; }
+    .color-head { margin-bottom:14px; }
+    .color-condition { font-size:10px; }
+  }
 </style>
 
 <div id="hg-content" class="hg-main">
@@ -1271,6 +1307,43 @@
     <div class="hg-title">&#9993;&#65039; Inbox</div>
     <div class="hg-sub">Read your Gmail inside Hamza Guide. <br><br><b>Coming soon</b> &mdash; needs a one-time Google Cloud setup (create a project, enable the Gmail API, add OAuth credentials). Tell me when you want to set this up and I'll walk you through it.</div>
   </div>
+  <section id="hg-color-pane" class="hg-card color-card" style="display:none;" aria-label="Color Measurement and Matching">
+    <div class="color-head">
+      <div>
+        <div class="hg-title">&#127912; Color Measurement</div>
+        <div class="hg-sub">Enter Target and Sample CIE L*a*b* readings from the spectrophotometer.</div>
+      </div>
+      <div class="color-condition">SCI / D65 / 10&deg;</div>
+    </div>
+    <div class="color-tolerance">
+      <div class="form-group"><label class="form-label" for="color-standard">Base &Delta;E Standard</label><select id="color-standard" onchange="colorApplyStandard()"><option value="1">Very strict &middot; &Delta;E 1.0</option><option value="2" selected>Standard &middot; &Delta;E 2.0</option><option value="3">Commercial &middot; &Delta;E 3.0</option><option value="5">Flexible &middot; &Delta;E 5.0</option></select></div>
+      <div class="form-group"><label class="form-label" for="color-base-de">Base &Delta;E Limit</label><input id="color-base-de" type="number" min="0.01" step="0.01" value="2.00" inputmode="decimal" oninput="colorRecalculate()"></div>
+      <div class="form-group"><label class="form-label" for="color-tolerance-pct">Tolerance %</label><input id="color-tolerance-pct" type="number" min="1" max="500" step="1" value="100" inputmode="numeric" oninput="colorRecalculate()"></div>
+    </div>
+    <div class="color-inputs">
+      <div class="color-panel target"><div class="color-panel-title">Target</div><div class="color-fields">
+        <div class="form-group"><label class="form-label" for="color-target-l">L*</label><input id="color-target-l" type="number" step="0.01" inputmode="decimal" placeholder="69.23" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-target-a">a*</label><input id="color-target-a" type="number" step="0.01" inputmode="decimal" placeholder="39.89" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-target-b">b*</label><input id="color-target-b" type="number" step="0.01" inputmode="decimal" placeholder="61.98" oninput="colorRecalculate()"></div>
+      </div></div>
+      <div class="color-panel sample"><div class="color-panel-title">Sample</div><div class="color-fields">
+        <div class="form-group"><label class="form-label" for="color-sample-l">L*</label><input id="color-sample-l" type="number" step="0.01" inputmode="decimal" placeholder="75.70" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-sample-a">a*</label><input id="color-sample-a" type="number" step="0.01" inputmode="decimal" placeholder="36.13" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-sample-b">b*</label><input id="color-sample-b" type="number" step="0.01" inputmode="decimal" placeholder="74.19" oninput="colorRecalculate()"></div>
+      </div></div>
+    </div>
+    <div class="color-results">
+      <div id="color-status" class="color-status"><div class="color-status-label">Waiting for readings</div><div id="color-status-value" class="color-status-value">&mdash;</div><div id="color-status-detail" class="color-status-detail">Enter all six L*a*b* values to calculate the match.</div></div>
+      <div class="color-data">
+        <div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div>
+        <div class="color-row"><span>C* (chroma)</span><span id="color-target-c">&mdash;</span><span id="color-sample-c">&mdash;</span></div>
+        <div class="color-row"><span>h&deg; (hue)</span><span id="color-target-h">&mdash;</span><span id="color-sample-h">&mdash;</span></div>
+        <div class="color-row"><span>&Delta;L* / &Delta;a* / &Delta;b*</span><span>&mdash;</span><span id="color-deltas">&mdash;</span></div>
+      </div>
+    </div>
+    <div id="color-guidance" class="color-guidance">No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.</div>
+    <div class="color-actions"><button class="btn btn-sm" type="button" onclick="colorReset()">Reset reading</button></div>
+  </section>
 </div>
 
 <div id="app-date" aria-hidden="true"></div>
@@ -11764,19 +11837,113 @@ function startSmartPolling() {
 init();
 
 // ── Hamza Guide tab switcher ───────────────────────────────────
-// Three top-level tabs in the fixed topbar: Job (PO), Paper, Inbox.
-// Paper / Job swap the calculator popover into the matching mode and hide
-// the inbox card. Inbox closes the calculator and shows the placeholder.
+// Four top-level tabs in the fixed topbar: Job (PO), Paper, Color, Inbox.
+// Paper / Job swap the calculator popover into the matching mode. Color is a
+// dedicated Lab measurement screen; it deliberately has no generic CMYK math.
 function hgShowTab(name) {
-  ['job','paper','inbox'].forEach(t => {
+  ['job','paper','color','inbox'].forEach(t => {
     const btn = document.getElementById('hg-tab-' + t);
     if (btn) btn.classList.toggle('active', t === name);
   });
   const inboxPane = document.getElementById('hg-inbox-pane');
+  const colorPane = document.getElementById('hg-color-pane');
   if (inboxPane) inboxPane.style.display = (name === 'inbox') ? 'block' : 'none';
+  if (colorPane) colorPane.style.display = (name === 'color') ? 'block' : 'none';
   if (name === 'job'   && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
   else if (name === 'paper' && typeof openCalculator    === 'function') openCalculator();
-  else if (name === 'inbox' && typeof closeCalculator   === 'function') closeCalculator();
+  else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
+}
+
+// -- Color Measurement & Matching ------------------------------------------
+// CIE 1976 L*a*b* / Delta E ab. The calculation stays entirely in Lab space:
+// a Lab->CMYK conversion would require the specific press ICC profile,
+// substrate, ink set, screening and calibration data and is intentionally
+// deferred until those inputs are available.
+function colorNumber(id) {
+  const el = document.getElementById(id);
+  if (!el || el.value.trim() === '') return null;
+  const value = Number(el.value);
+  return Number.isFinite(value) ? value : null;
+}
+function colorFmt(value, digits = 2) {
+  return Number.isFinite(value) ? value.toFixed(digits) : '—';
+}
+function colorSigned(value) {
+  return `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(2)}`;
+}
+function colorChroma(a, b) { return Math.sqrt(a * a + b * b); }
+function colorHue(a, b) {
+  const degrees = Math.atan2(b, a) * 180 / Math.PI;
+  return degrees < 0 ? degrees + 360 : degrees;
+}
+function colorDirection(value, positive, negative, neutral) {
+  if (Math.abs(value) < 0.005) return neutral;
+  return value > 0 ? positive : negative;
+}
+function colorApplyStandard() {
+  const standard = document.getElementById('color-standard');
+  const base = document.getElementById('color-base-de');
+  if (standard && base) base.value = Number(standard.value).toFixed(2);
+  colorRecalculate();
+}
+function colorReset() {
+  ['target-l','target-a','target-b','sample-l','sample-a','sample-b'].forEach(key => {
+    const el = document.getElementById('color-' + key);
+    if (el) el.value = '';
+  });
+  colorRecalculate();
+  const first = document.getElementById('color-target-l');
+  if (first) first.focus();
+}
+function colorRecalculate() {
+  const target = ['l','a','b'].map(k => colorNumber('color-target-' + k));
+  const sample = ['l','a','b'].map(k => colorNumber('color-sample-' + k));
+  const base = colorNumber('color-base-de');
+  const pct = colorNumber('color-tolerance-pct');
+  const status = document.getElementById('color-status');
+  const label = document.querySelector('#color-status .color-status-label');
+  const value = document.getElementById('color-status-value');
+  const detail = document.getElementById('color-status-detail');
+  const guidance = document.getElementById('color-guidance');
+  const complete = target.every(Number.isFinite) && sample.every(Number.isFinite);
+  const allowed = Number.isFinite(base) && base > 0 && Number.isFinite(pct) && pct > 0 ? base * pct / 100 : null;
+
+  if (!complete) {
+    if (status) status.className = 'color-status';
+    if (label) label.textContent = 'Waiting for readings';
+    if (value) value.textContent = '—';
+    if (detail) detail.textContent = 'Enter all six L*a*b* values to calculate the match.';
+    ['target-c','sample-c','target-h','sample-h','deltas'].forEach(k => { const el = document.getElementById('color-' + k); if (el) el.textContent = '—'; });
+    if (guidance) guidance.textContent = 'No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.';
+    return;
+  }
+
+  const [tL, ta, tb] = target;
+  const [sL, sa, sb] = sample;
+  const dL = sL - tL, da = sa - ta, db = sb - tb;
+  const deltaE = Math.sqrt(dL * dL + da * da + db * db);
+  const targetC = colorChroma(ta, tb), sampleC = colorChroma(sa, sb);
+  const targetH = colorHue(ta, tb), sampleH = colorHue(sa, sb);
+  const consumed = allowed ? deltaE / allowed * 100 : null;
+  const passes = allowed ? deltaE <= allowed : false;
+
+  document.getElementById('color-target-c').textContent = colorFmt(targetC);
+  document.getElementById('color-sample-c').textContent = colorFmt(sampleC);
+  document.getElementById('color-target-h').textContent = colorFmt(targetH) + '°';
+  document.getElementById('color-sample-h').textContent = colorFmt(sampleH) + '°';
+  document.getElementById('color-deltas').textContent = `${colorSigned(dL)} / ${colorSigned(da)} / ${colorSigned(db)}`;
+
+  if (status) status.className = 'color-status ' + (passes ? 'pass' : 'fail');
+  if (label) label.textContent = passes ? 'Color match passed' : 'Color match failed';
+  if (value) value.textContent = `${passes ? 'PASS' : 'FAIL'} · ΔE ${colorFmt(deltaE)}`;
+  if (detail) detail.textContent = allowed
+    ? `Allowed ΔE: ${colorFmt(allowed)} (${colorFmt(base)} base × ${colorFmt(pct, 0)}%). Tolerance used: ${colorFmt(consumed, 0)}%.`
+    : 'Set a valid base ΔE limit and tolerance percentage.';
+
+  const lightness = colorDirection(dL, `Sample is lighter by ${colorFmt(Math.abs(dL))}.`, `Sample is darker by ${colorFmt(Math.abs(dL))}.`, 'Lightness matches.');
+  const redGreen = colorDirection(da, `It is redder by ${colorFmt(Math.abs(da))}.`, `It is greener by ${colorFmt(Math.abs(da))}.`, 'Red/green position matches.');
+  const yellowBlue = colorDirection(db, `It is yellower by ${colorFmt(Math.abs(db))}.`, `It is bluer by ${colorFmt(Math.abs(db))}.`, 'Yellow/blue position matches.');
+  if (guidance) guidance.textContent = `${lightness} ${redGreen} ${yellowBlue} No CMYK correction is suggested until your press calibration data is added.`;
 }
 
 // Move the floating calc popover INTO the main content area so it renders
