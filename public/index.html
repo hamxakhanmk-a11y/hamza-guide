@@ -1305,6 +1305,7 @@
   .color-direction-list { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
   .color-direction { display:inline-flex; align-items:center; gap:6px; }
   .color-direction-swatch { width:15px; height:15px; flex:0 0 15px; border-radius:3px; border:1px solid rgba(255,255,255,.7); box-shadow:0 0 0 1px rgba(0,0,0,.12); }
+  .color-direction-swatch.match { display:inline-flex; align-items:center; justify-content:center; background:#16803a; color:#fff; font-size:11px; font-style:normal; line-height:1; }
   .color-actions { display:flex; justify-content:flex-end; margin-top:12px; }
   .color-subtabs { display:flex; gap:5px; overflow-x:auto; padding-bottom:2px; margin:0 0 14px; }
   .color-subtab { border:1px solid var(--border); background:#fff; color:var(--text2); padding:7px 10px; border-radius:6px; white-space:nowrap; cursor:pointer; font:600 12px var(--font); }
@@ -12104,7 +12105,7 @@ function colorSetLabDifference(id, value, positiveColor, positiveLabel, negative
   if (!el) return;
   if (!Number.isFinite(value)) { el.textContent = '—'; return; }
   if (Math.abs(value) < 0.005) {
-    el.innerHTML = `<i class="color-direction-swatch" style="background:#a1a1aa"></i>${colorSigned(value)} · Match`;
+    el.innerHTML = `<i class="color-direction-swatch match">✓</i>${colorSigned(value)} · Match`;
     return;
   }
   const isPositive = value >= 0;
