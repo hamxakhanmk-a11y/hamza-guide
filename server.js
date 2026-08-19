@@ -330,6 +330,31 @@ async function initDb() {
     `;
     await sql`CREATE INDEX IF NOT EXISTS station_notes_job_idx ON station_notes(job_id)`;
 
+    // Press profiles are the foundation for press-specific Lab -> CMYK
+    // calibration. A profile represents one real production condition: one
+    // machine, ink system and paper/coating/print-side combination. Calibration
+    // patches will be attached to these profiles in the next phase.
+    await sql`
+      CREATE TABLE IF NOT EXISTS press_profiles (
+        id           SERIAL PRIMARY KEY,
+        name         TEXT NOT NULL,
+        machine      TEXT,
+        print_process TEXT,
+        paper_type   TEXT,
+        coating      TEXT,
+        print_side   TEXT,
+        gsm          TEXT,
+        paper_brand  TEXT,
+        ink_system   TEXT,
+        ink_brand    TEXT,
+        ink_strength TEXT,
+        notes        TEXT,
+        created_at   TIMESTAMPTZ DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS press_profiles_machine_idx ON press_profiles(machine)`;
+
     console.log('Database ready');
   } catch (err) {
     console.error('Database init error:', err.message);
@@ -2323,6 +2348,30 @@ app.delete('/api/capa/:id', requireJobsWriter, async (req, res) => {
       metadata: { job_id: capa.job_id, capa_ref: capa.capa_ref },
     });
     res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+// ── Press profiles / colour calibration foundation ────────────────────────
+app.get('/api/press-profiles', requireAuth, async (req, res) => {
+  try {
+    await dbReady;
+    const sql = getDb();
+    res.json(await sql`SELECT * FROM press_profiles ORDER BY name ASC, id DESC`);
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/press-profiles', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const d = req.body || {};
+    if (!String(d.name || '').trim()) return res.status(400).json({ error: 'Profile name is required' });
+    const sql = getDb();
+    const rows = await sql`
+      INSERT INTO press_profiles (name,machine,print_process,paper_type,coating,print_side,gsm,paper_brand,ink_system,ink_brand,ink_strength,notes)
+      VALUES (${d.name.trim()},${d.machine||null},${d.print_process||null},${d.paper_type||null},${d.coating||null},${d.print_side||null},${d.gsm||null},${d.paper_brand||null},${d.ink_system||null},${d.ink_brand||null},${d.ink_strength||null},${d.notes||null})
+      RETURNING *
+    `;
+    res.status(201).json(rows[0]);
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 

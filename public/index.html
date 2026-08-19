@@ -1348,6 +1348,7 @@
     <div class="color-subtabs" role="tablist" aria-label="Color measurement views">
       <button class="color-subtab active" id="color-tab-lab" onclick="colorShowView('lab')">Lab Difference</button>
       <button class="color-subtab" id="color-tab-lch" onclick="colorShowView('lch')">C* &amp; h&deg;</button>
+      <button class="color-subtab" id="color-tab-profiles" onclick="colorShowView('profiles')">Press Profiles</button>
       <button class="color-subtab" id="color-tab-spectrum" onclick="colorShowView('spectrum')">Spectrum</button>
       <button class="color-subtab" id="color-tab-setup" onclick="colorShowView('setup')">Setup</button>
     </div>
@@ -1376,6 +1377,7 @@
       <div class="color-data"><div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div><div class="color-row"><span>Chroma C*</span><span id="color-lch-target-c">&mdash;</span><span id="color-lch-sample-c">&mdash;</span></div><div class="color-row"><span>Hue h&deg;</span><span id="color-lch-target-h">&mdash;</span><span id="color-lch-sample-h">&mdash;</span></div><div class="color-row"><span>&Delta;C* / &Delta;H*</span><span>&mdash;</span><span id="color-lch-difference">&mdash;</span></div></div>
       <div class="color-note" style="margin-top:12px;">CIE LCh is derived directly from CIE Lab. C* describes chroma; h&deg; describes hue angle.</div>
     </div>
+    <div id="color-profiles-pane" class="color-extra-pane"></div>
     <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-note" style="margin-top:12px;">These are sRGB screen-preview codes only. They are useful for comparing on-screen appearance, not for specifying press CMYK.</div></div>
     <div id="color-spectrum-pane" class="color-extra-pane"><div class="color-spectrum-empty"><b>Spectrum data not entered</b><br>To draw the real Target/Sample graph, enter or import the spectrophotometer reflectance values for each wavelength (for example 400–700 nm). Lab values alone cannot create a genuine spectral curve.</div></div>
     <div id="color-setup-pane" class="color-extra-pane"><div class="color-setup-grid"><div class="form-group"><label class="form-label">Difference Formula</label><select id="color-formula" onchange="colorRecalculate()"><option value="76">&Delta;E*ab / CIE76</option><option value="94">&Delta;E94 (graphic arts)</option><option value="cmc">&Delta;E CMC (2:1)</option><option value="2000">&Delta;E00 / CIEDE2000</option></select></div><div class="form-group"><label class="form-label">Geometry</label><select id="color-geometry"><option selected>SCI</option><option>SCE</option></select></div><div class="form-group"><label class="form-label">Observer Angle</label><select id="color-observer"><option value="10" selected>10&deg;</option><option value="2">2&deg;</option></select></div><div class="form-group"><label class="form-label">Illuminant</label><select id="color-illuminant"><option>A</option><option>C</option><option>D50</option><option>D55</option><option selected>D65</option><option>D75</option><option>F1</option><option>F2</option><option>F3</option><option>F4</option><option>F5</option><option>F6</option><option>F7</option><option>F8</option><option>F9</option><option>F10</option><option>F11</option><option>F12</option><option>CWF</option><option>U30</option></select></div></div><div class="color-note" style="margin-top:12px;">Optional component limits &mdash; leave blank to disable that check.</div><div class="color-setup-grid" style="margin-top:10px;"><div class="form-group"><label class="form-label">|&Delta;L*| limit</label><input id="color-tol-l" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;a*| limit</label><input id="color-tol-a" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;b*| limit</label><input id="color-tol-b" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;C*| limit</label><input id="color-tol-c" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">&Delta;H* limit</label><input id="color-tol-h" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div></div><div class="color-note" style="margin-top:12px;">Use the exact geometry, illuminant, and observer shown by the instrument for this reading. Changing these settings does not transform an existing Lab reading; it documents the condition under which it was measured.</div></div>
@@ -11919,7 +11921,7 @@ function colorDirection(value, positive, negative, neutral) {
   return value > 0 ? positive : negative;
 }
 function colorShowView(view) {
-  ['lab','lch','spectrum','setup'].forEach(name => {
+  ['lab','lch','profiles','spectrum','setup'].forEach(name => {
     const tab = document.getElementById('color-tab-' + name);
     if (tab) tab.classList.toggle('active', name === view);
     const pane = document.getElementById('color-' + name + '-pane');
@@ -11933,9 +11935,31 @@ function colorShowView(view) {
   const labInputs = document.querySelector('#hg-color-pane > .color-inputs');
   if (summary) summary.style.display = view === 'lab' ? '' : 'none';
   if (guidance) guidance.style.display = view === 'lab' ? '' : 'none';
-  if (quickTolerance) quickTolerance.style.display = view === 'setup' ? 'none' : '';
-  if (labInputs) labInputs.style.display = view === 'setup' ? 'none' : '';
+  if (quickTolerance) quickTolerance.style.display = (view === 'setup' || view === 'profiles') ? 'none' : '';
+  if (labInputs) labInputs.style.display = (view === 'setup' || view === 'profiles') ? 'none' : '';
+  if (view === 'profiles') colorRenderPressProfiles();
   if (view === 'setup') colorBuildSettingsPanel();
+}
+let colorPressProfiles = [];
+async function colorRenderPressProfiles() {
+  const pane = document.getElementById('color-profiles-pane');
+  if (!pane) return;
+  pane.innerHTML = `<div class="color-head"><div><div class="hg-title">Press Profiles</div><div class="hg-sub">Save each real press, ink and board condition separately. Calibration patches added tomorrow will belong to one of these profiles.</div></div><button class="btn btn-primary btn-sm" onclick="colorOpenPressProfileForm()">+ New Profile</button></div><div class="color-spectrum-empty">Loading profiles…</div>`;
+  try {
+    colorPressProfiles = await api('GET','/api/press-profiles');
+    const cards = colorPressProfiles.length ? colorPressProfiles.map(p => `<div class="color-panel" style="margin-bottom:9px;"><div class="color-panel-title">${esc(p.name)}</div><div style="padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.7;"><b>Machine:</b> ${esc(p.machine||'Not entered')} &nbsp;·&nbsp; <b>Paper:</b> ${esc(p.paper_type||'Not entered')} ${p.gsm?esc(p.gsm)+' gsm':''}<br><b>Coating / print side:</b> ${esc(p.coating||'Not entered')} / ${esc(p.print_side||'Not entered')}<br><b>Ink:</b> ${esc(p.ink_system||'Not entered')} ${p.ink_brand?'· '+esc(p.ink_brand):''}</div></div>`).join('') : `<div class="color-spectrum-empty"><b>No press profiles yet</b><br>Create one for each machine + paper/coating + ink condition. Example: “Heidelberg · Duplex Board · coated side · 300 gsm”.</div>`;
+    pane.innerHTML = `<div class="color-head"><div><div class="hg-title">Press Profiles</div><div class="hg-sub">Calibration data is always tied to one real printing condition.</div></div><button class="btn btn-primary btn-sm" onclick="colorOpenPressProfileForm()">+ New Profile</button></div>${cards}`;
+  } catch (e) { pane.innerHTML = `<div class="color-spectrum-empty">Could not load profiles: ${esc(e.message)}</div>`; }
+}
+function colorOpenPressProfileForm() {
+  const pane=document.getElementById('color-profiles-pane'); if(!pane) return;
+  pane.innerHTML = `<div class="color-head"><div><div class="hg-title">New Press Profile</div><div class="hg-sub">Use a different profile whenever machine, ink system, board, coating side, or print condition changes.</div></div><button class="btn btn-sm" onclick="colorRenderPressProfiles()">Back</button></div><div class="color-setup-grid"><div class="form-group"><label class="form-label">Profile name *</label><input id="pp-name" type="text" placeholder="e.g. Duplex Board · coated side · 300 gsm"></div><div class="form-group"><label class="form-label">Machine</label><input id="pp-machine" type="text" placeholder="Machine name"></div><div class="form-group"><label class="form-label">Printing process</label><input id="pp-process" type="text" placeholder="Offset, flexo, etc."></div><div class="form-group"><label class="form-label">Paper / board type</label><input id="pp-paper" type="text" placeholder="Duplex Board, Bleach Board"></div><div class="form-group"><label class="form-label">Coating</label><input id="pp-coating" type="text" placeholder="One-side coated / two-side coated"></div><div class="form-group"><label class="form-label">Print side</label><input id="pp-side" type="text" placeholder="Coated side / reverse side"></div><div class="form-group"><label class="form-label">GSM</label><input id="pp-gsm" type="text" inputmode="numeric" placeholder="e.g. 300"></div><div class="form-group"><label class="form-label">Paper brand / supplier</label><input id="pp-paper-brand" type="text" placeholder="Optional"></div><div class="form-group"><label class="form-label">Ink system</label><input id="pp-ink-system" type="text" placeholder="Process CMYK, UV, etc."></div><div class="form-group"><label class="form-label">Ink brand</label><input id="pp-ink-brand" type="text" placeholder="Optional"></div><div class="form-group"><label class="form-label">Ink strength / notes</label><input id="pp-ink-strength" type="text" placeholder="Optional"></div></div><div class="form-group" style="margin-top:10px;"><label class="form-label">Notes</label><textarea id="pp-notes" class="form-ta" placeholder="Anything that changes colour on this condition"></textarea></div><div class="color-actions"><button class="btn btn-primary" onclick="colorSavePressProfile()">Save Profile</button></div>`;
+}
+async function colorSavePressProfile() {
+  const get=id=>(document.getElementById(id)||{}).value||'';
+  const body={name:get('pp-name'),machine:get('pp-machine'),print_process:get('pp-process'),paper_type:get('pp-paper'),coating:get('pp-coating'),print_side:get('pp-side'),gsm:get('pp-gsm'),paper_brand:get('pp-paper-brand'),ink_system:get('pp-ink-system'),ink_brand:get('pp-ink-brand'),ink_strength:get('pp-ink-strength'),notes:get('pp-notes')};
+  if(!body.name.trim()) { notify('Profile name is required'); return; }
+  try { await api('POST','/api/press-profiles',body); notify('Press profile saved'); colorRenderPressProfiles(); } catch(e) { notify('Error: '+e.message); }
 }
 function colorBuildSettingsPanel() {
   const pane = document.getElementById('color-setup-pane');
