@@ -11951,10 +11951,11 @@ function colorSettingsView(view) {
   if (view === 'parameter') out.innerHTML = `
     <div class="meter-section-title">Measurement</div>
     <div class="meter-row"><span class="meter-label">Reflectance / Transmittance</span><span class="meter-readonly">Reflectance</span></div>
-    <div class="meter-row"><label for="color-geometry">Test Mode</label><select id="color-geometry" onchange="colorRecalculate()"><option selected>SCI</option><option>SCE</option></select></div>
+    <div class="meter-row"><span class="meter-label">Measurement Condition</span><span class="meter-readonly">SCI &mdash; fixed by instrument</span></div>
     <div class="meter-section-title">Display Settings</div>
-    <div class="meter-row"><span class="meter-label">Color Space</span><span class="meter-readonly">CIE Lab / CIE LCh</span></div>
+    <div class="meter-row"><span class="meter-label">Color Space</span><span class="meter-readonly">CIE Lab (active) / CIE LCh</span></div>
     <div class="meter-row"><label for="color-formula">Color Difference</label><select id="color-formula" onchange="colorRecalculate()"><option value="76">ΔE*ab / CIE76</option><option value="94">ΔE94</option><option value="cmc">ΔE CMC</option><option value="2000">ΔE00</option></select></div>
+    <div class="color-note" style="margin-top:10px;">Hunter Lab, XYZ, and CIE Luv will be added as real calculated views after we verify their values against your instrument. They are not shown as selectable yet because we should not display a mode that does not calculate correctly.</div>
     <div class="meter-section-title">Light Source / Angle</div>
     <div class="meter-row"><label for="color-illuminant">1st Light Source</label><select id="color-illuminant" onchange="colorRecalculate()"><option>A</option><option>C</option><option>D50</option><option>D55</option><option selected>D65</option><option>D75</option><option>F1</option><option>F2</option><option>F3</option><option>F4</option><option>F5</option><option>F6</option><option>F7</option><option>F8</option><option>F9</option><option>F10</option><option>F11</option><option>F12</option><option>CWF</option><option>U30</option></select></div>
     <div class="meter-row"><label for="color-observer">1st Angle</label><select id="color-observer" onchange="colorRecalculate()"><option value="2">2°</option><option value="10" selected>10°</option></select></div>
