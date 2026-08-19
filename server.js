@@ -1,5 +1,7 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
@@ -36,6 +38,72 @@ app.get('/config.js', (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ICC conversion runs on the server rather than in the browser. This makes
+// the FOGRA/SWOP/GRACoL conversion work consistently on phones and Vercel.
+const ICC_CMYK_PROFILES = {
+  coated: { file: 'PSOcoated_v3.icc', label: 'PSO Coated v3 / FOGRA51' },
+  uncoated: { file: 'PSOuncoated_v3_FOGRA52.icc', label: 'PSO Uncoated v3 / FOGRA52' },
+  fogra39: { file: 'Coated_Fogra39L_VIGC_260.icc', label: 'FOGRA39 / ISO Coated v2' },
+  gracol: { file: 'GRACoL2013_CRPC6.icc', label: 'GRACoL 2013 / CRPC6' },
+  swop: { file: 'SWOP2013C3_CRPC5.icc', label: 'SWOP 2013 / CRPC5' },
+};
+const iccEngineState = { ready: null, engine: null, labProfile: null, transforms: {} };
+
+function iccLab16(values) {
+  const [L, a, b] = values;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  return new Uint16Array([
+    Math.round(clamp(L, 0, 100) * 65535 / 100),
+    Math.round((clamp(a, -128, 127) + 128) * 65535 / 255),
+    Math.round((clamp(b, -128, 127) + 128) * 65535 / 255),
+  ]);
+}
+
+async function getIccEngine() {
+  if (iccEngineState.ready) return iccEngineState.ready;
+  iccEngineState.ready = (async () => {
+    const lcmsPath = path.join(__dirname, 'public', 'vendor', 'lcms', 'lcms.min.js');
+    const lcms = await import(pathToFileURL(lcmsPath).href);
+    const engine = await lcms.instantiate({
+      locateFile: (name) => path.join(__dirname, 'public', 'vendor', 'lcms', name),
+    });
+    iccEngineState.engine = engine;
+    iccEngineState.labProfile = engine.cmsCreateLab4Profile();
+    return lcms;
+  })().catch((error) => {
+    iccEngineState.ready = null;
+    throw error;
+  });
+  return iccEngineState.ready;
+}
+
+async function getIccTransform(profileKey) {
+  const profile = ICC_CMYK_PROFILES[profileKey];
+  if (!profile) throw new Error('Unsupported CMYK baseline profile');
+  if (iccEngineState.transforms[profileKey]) return iccEngineState.transforms[profileKey];
+  const lcms = await getIccEngine();
+  const profilePath = path.join(__dirname, 'public', 'icc', profile.file);
+  const bytes = await fs.promises.readFile(profilePath);
+  const data = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const cmykProfile = iccEngineState.engine.cmsOpenProfileFromMem(data, data.byteLength);
+  if (!cmykProfile) throw new Error(`Could not open ${profile.label}`);
+  const transform = iccEngineState.engine.cmsCreateTransform(
+    iccEngineState.labProfile, lcms.TYPE_Lab_16, cmykProfile, lcms.TYPE_CMYK_8,
+    lcms.INTENT_RELATIVE_COLORIMETRIC, 0,
+  );
+  if (!transform) throw new Error(`Could not create ${profile.label} conversion`);
+  iccEngineState.transforms[profileKey] = transform;
+  return transform;
+}
+
+async function convertLabToIccCmyk(profileKey, lab) {
+  const transform = await getIccTransform(profileKey);
+  return Array.from(
+    iccEngineState.engine.cmsDoTransform(transform, iccLab16(lab), 1),
+    (channel) => Math.round(channel / 255 * 100),
+  );
+}
 
 function getDb() {
   const url = process.env.DATABASE_URL;
@@ -2434,6 +2502,29 @@ app.delete('/api/press-calibration/:id', requireWriteUser, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Calibration reading not found' });
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+// Convert Lab values through one of the bundled industry ICC baselines.
+// It works with or without a saved press profile; press measurements refine it later.
+app.post('/api/color/icc-cmyk', requireAuth, async (req, res) => {
+  try {
+    const data = req.body || {};
+    const profileKey = String(data.profile || 'coated');
+    const target = Array.isArray(data.target) ? data.target.map(Number) : [];
+    const sample = Array.isArray(data.sample) ? data.sample.map(Number) : [];
+    if (!ICC_CMYK_PROFILES[profileKey]) return res.status(400).json({ error: 'Choose a valid CMYK baseline profile' });
+    if (target.length !== 3 || sample.length !== 3 || ![...target, ...sample].every(Number.isFinite)) {
+      return res.status(400).json({ error: 'Enter all Target and Sample L*a*b* values' });
+    }
+    const [targetCmyk, sampleCmyk] = await Promise.all([
+      convertLabToIccCmyk(profileKey, target),
+      convertLabToIccCmyk(profileKey, sample),
+    ]);
+    res.json({ profile: { key: profileKey, label: ICC_CMYK_PROFILES[profileKey].label }, target: targetCmyk, sample: sampleCmyk });
+  } catch (err) {
+    console.error('ICC CMYK conversion error:', err);
+    res.status(500).json({ error: 'The ICC conversion service could not start. Please reload and try again.' });
+  }
 });
 
 app.get('*', (req, res) => {

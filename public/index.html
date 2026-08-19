@@ -12209,18 +12209,16 @@ async function colorApplyIccCmyk(target, sample) {
   const key = colorIccProfileKey();
   const note = document.getElementById('color-cmyk-note');
   colorSetCmyk('target', null, '…'); colorSetCmyk('sample', null, '…');
-  if (note) note.innerHTML = '<b>Loading ICC baseline…</b> Converting Lab through the selected FOGRA profile.';
+  if (note) note.innerHTML = '<b>Loading ICC baseline…</b> Converting Lab through the selected printing standard.';
   try {
-    await colorLoadIccProfile(key);
+    const result = await api('POST', '/api/color/icc-cmyk', { profile:key, target, sample });
     if (request !== colorIccState.request) return;
-    const transform = colorIccState.transforms[key];
-    const convert = value => Array.from(colorIccState.engine.cmsDoTransform(transform, colorIccEncodeLab(value), 1), channel => Math.round(channel / 255 * 100));
-    colorSetCmyk('target', convert(target)); colorSetCmyk('sample', convert(sample));
-    if (note) note.innerHTML = `<b>${colorIccProfiles[key].label} baseline.</b> This industry-standard offset estimate uses the official ICC profile. Your real press calibration can replace it later.`;
+    colorSetCmyk('target', result.target); colorSetCmyk('sample', result.sample);
+    if (note) note.innerHTML = `<b>${result.profile.label} baseline.</b> This industry-standard offset estimate uses the official ICC profile. Your real press calibration can replace it later.`;
   } catch (error) {
     if (request !== colorIccState.request) return;
     colorSetCmyk('target', null); colorSetCmyk('sample', null);
-    if (note) note.innerHTML = '<b>ICC profile unavailable.</b> Check the internet connection, then reload the app.';
+    if (note) note.innerHTML = '<b>ICC conversion could not run.</b> Please reload the app once, then try again.';
     console.error('ICC CMYK conversion failed:', error);
   }
 }
