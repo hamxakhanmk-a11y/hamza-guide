@@ -1294,11 +1294,24 @@
   .color-row.head { background:var(--bg2); color:var(--text2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
   .color-guidance { margin-top:12px; border-left:3px solid var(--brand); padding:9px 11px; background:var(--bg2); color:var(--text2); font-size:12px; line-height:1.55; border-radius:0 var(--radius-sm) var(--radius-sm) 0; }
   .color-actions { display:flex; justify-content:flex-end; margin-top:12px; }
+  .color-subtabs { display:flex; gap:5px; overflow-x:auto; padding-bottom:2px; margin:0 0 14px; }
+  .color-subtab { border:1px solid var(--border); background:#fff; color:var(--text2); padding:7px 10px; border-radius:6px; white-space:nowrap; cursor:pointer; font:600 12px var(--font); }
+  .color-subtab.active { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .color-extra-pane { display:none; margin-top:14px; }
+  .color-extra-pane.active { display:block; }
+  .color-swatch-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .color-swatch { min-height:150px; border-radius:var(--radius-sm); display:flex; flex-direction:column; justify-content:flex-end; overflow:hidden; border:1px solid var(--border); background:#ddd; }
+  .color-swatch-info { background:rgba(20,20,20,.55); color:#fff; padding:11px; font-size:13px; font-weight:700; }
+  .color-swatch-info small { display:block; font-weight:500; opacity:.9; margin-top:3px; }
+  .color-setup-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .color-note { background:var(--bg2); border-left:3px solid var(--brand); border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:12px; color:var(--text2); font-size:12px; line-height:1.55; }
+  .color-spectrum-empty { text-align:center; padding:28px 14px; border:1px dashed var(--border2); border-radius:var(--radius-sm); color:var(--text2); font-size:13px; line-height:1.6; }
   @media (max-width:700px) {
     .color-tolerance, .color-inputs, .color-results { grid-template-columns:1fr; }
     .color-card { padding:16px !important; }
     .color-head { margin-bottom:14px; }
     .color-condition { font-size:10px; }
+    .color-setup-grid { grid-template-columns:1fr; }
   }
 </style>
 
@@ -1314,6 +1327,13 @@
         <div class="hg-sub">Enter Target and Sample CIE L*a*b* readings from the spectrophotometer.</div>
       </div>
       <div class="color-condition">SCI / D65 / 10&deg;</div>
+    </div>
+    <div class="color-subtabs" role="tablist" aria-label="Color measurement views">
+      <button class="color-subtab active" id="color-tab-lab" onclick="colorShowView('lab')">Lab Difference</button>
+      <button class="color-subtab" id="color-tab-lch" onclick="colorShowView('lch')">C* &amp; h&deg;</button>
+      <button class="color-subtab" id="color-tab-code" onclick="colorShowView('code')">Color Code</button>
+      <button class="color-subtab" id="color-tab-spectrum" onclick="colorShowView('spectrum')">Spectrum</button>
+      <button class="color-subtab" id="color-tab-setup" onclick="colorShowView('setup')">Setup</button>
     </div>
     <div class="color-tolerance">
       <div class="form-group"><label class="form-label" for="color-standard">Base &Delta;E Standard</label><select id="color-standard" onchange="colorApplyStandard()"><option value="1">Very strict &middot; &Delta;E 1.0</option><option value="2" selected>Standard &middot; &Delta;E 2.0</option><option value="3">Commercial &middot; &Delta;E 3.0</option><option value="5">Flexible &middot; &Delta;E 5.0</option></select></div>
@@ -1332,7 +1352,7 @@
         <div class="form-group"><label class="form-label" for="color-sample-b">b*</label><input id="color-sample-b" type="number" step="0.01" inputmode="decimal" placeholder="74.19" oninput="colorRecalculate()"></div>
       </div></div>
     </div>
-    <div class="color-results">
+    <div id="color-lab-summary" class="color-results">
       <div id="color-status" class="color-status"><div class="color-status-label">Waiting for readings</div><div id="color-status-value" class="color-status-value">&mdash;</div><div id="color-status-detail" class="color-status-detail">Enter all six L*a*b* values to calculate the match.</div></div>
       <div class="color-data">
         <div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div>
@@ -1342,6 +1362,13 @@
       </div>
     </div>
     <div id="color-guidance" class="color-guidance">No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.</div>
+    <div id="color-lch-pane" class="color-extra-pane">
+      <div class="color-data"><div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div><div class="color-row"><span>Chroma C*</span><span id="color-lch-target-c">&mdash;</span><span id="color-lch-sample-c">&mdash;</span></div><div class="color-row"><span>Hue h&deg;</span><span id="color-lch-target-h">&mdash;</span><span id="color-lch-sample-h">&mdash;</span></div><div class="color-row"><span>&Delta;C* / &Delta;H*</span><span>&mdash;</span><span id="color-lch-difference">&mdash;</span></div></div>
+      <div class="color-note" style="margin-top:12px;">CIE LCh is derived directly from CIE Lab. C* describes chroma; h&deg; describes hue angle.</div>
+    </div>
+    <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-note" style="margin-top:12px;">These are sRGB screen-preview codes only. They are useful for comparing on-screen appearance, not for specifying press CMYK.</div></div>
+    <div id="color-spectrum-pane" class="color-extra-pane"><div class="color-spectrum-empty"><b>Spectrum data not entered</b><br>To draw the real Target/Sample graph, enter or import the spectrophotometer reflectance values for each wavelength (for example 400–700 nm). Lab values alone cannot create a genuine spectral curve.</div></div>
+    <div id="color-setup-pane" class="color-extra-pane"><div class="color-setup-grid"><div class="form-group"><label class="form-label">Difference Formula</label><select id="color-formula" onchange="colorRecalculate()"><option value="76">&Delta;E*ab / CIE76</option><option value="94">&Delta;E94 (graphic arts)</option><option value="cmc">&Delta;E CMC (2:1)</option><option value="2000">&Delta;E00 / CIEDE2000</option></select></div><div class="form-group"><label class="form-label">Geometry</label><select id="color-geometry"><option selected>SCI</option><option>SCE</option></select></div><div class="form-group"><label class="form-label">Observer Angle</label><select id="color-observer"><option value="10" selected>10&deg;</option><option value="2">2&deg;</option></select></div><div class="form-group"><label class="form-label">Illuminant</label><select id="color-illuminant"><option>A</option><option>C</option><option>D50</option><option>D55</option><option selected>D65</option><option>D75</option><option>F1</option><option>F2</option><option>F3</option><option>F4</option><option>F5</option><option>F6</option><option>F7</option><option>F8</option><option>F9</option><option>F10</option><option>F11</option><option>F12</option><option>CWF</option><option>U30</option></select></div></div><div class="color-note" style="margin-top:12px;">Optional component limits &mdash; leave blank to disable that check.</div><div class="color-setup-grid" style="margin-top:10px;"><div class="form-group"><label class="form-label">|&Delta;L*| limit</label><input id="color-tol-l" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;a*| limit</label><input id="color-tol-a" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;b*| limit</label><input id="color-tol-b" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;C*| limit</label><input id="color-tol-c" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">&Delta;H* limit</label><input id="color-tol-h" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div></div><div class="color-note" style="margin-top:12px;">Use the exact geometry, illuminant, and observer shown by the instrument for this reading. Changing these settings does not transform an existing Lab reading; it documents the condition under which it was measured.</div></div>
     <div class="color-actions"><button class="btn btn-sm" type="button" onclick="colorReset()">Reset reading</button></div>
   </section>
 </div>
@@ -11880,6 +11907,51 @@ function colorDirection(value, positive, negative, neutral) {
   if (Math.abs(value) < 0.005) return neutral;
   return value > 0 ? positive : negative;
 }
+function colorShowView(view) {
+  ['lab','lch','code','spectrum','setup'].forEach(name => {
+    const tab = document.getElementById('color-tab-' + name);
+    if (tab) tab.classList.toggle('active', name === view);
+    const pane = document.getElementById('color-' + name + '-pane');
+    if (pane) pane.classList.toggle('active', name === view);
+  });
+  const summary = document.getElementById('color-lab-summary');
+  const guidance = document.getElementById('color-guidance');
+  if (summary) summary.style.display = view === 'lab' ? '' : 'none';
+  if (guidance) guidance.style.display = view === 'lab' ? '' : 'none';
+}
+function colorDeltaE94(t, s) {
+  const dL = s[0] - t[0], c1 = colorChroma(t[1], t[2]), c2 = colorChroma(s[1], s[2]);
+  const dC = c2 - c1, dH2 = Math.max(0, (s[1]-t[1])**2 + (s[2]-t[2])**2 - dC**2);
+  return Math.sqrt(dL*dL + (dC/(1 + .045*c1))**2 + dH2/(1 + .015*c1)**2);
+}
+function colorDeltaECmc(t, s) {
+  const [L1,a1,b1] = t, [L2,a2,b2] = s, c1 = colorChroma(a1,b1), c2 = colorChroma(a2,b2);
+  const dL=L2-L1, dC=c2-c1, dH=Math.sqrt(Math.max(0,(a2-a1)**2+(b2-b1)**2-dC*dC));
+  let h=colorHue(a1,b1), T=(h>=164&&h<=345)?(.56+Math.abs(.2*Math.cos((h+168)*Math.PI/180))):(.36+Math.abs(.4*Math.cos((h+35)*Math.PI/180)));
+  const F=Math.sqrt(c1**4/(c1**4+1900));
+  const SL=L1<16?.511:.040975*L1/(1+.01765*L1);
+  return Math.sqrt((dL/(2*SL))**2 + (dC/(1+.045*c1))**2 + (dH/(1+.638*F*T*c1))**2);
+}
+function colorDeltaE2000(t, s) {
+  const [L1,a1,b1]=t,[L2,a2,b2]=s, avgL=(L1+L2)/2, c1=Math.hypot(a1,b1), c2=Math.hypot(a2,b2), avgC=(c1+c2)/2;
+  const G=.5*(1-Math.sqrt(avgC**7/(avgC**7+25**7))), ap1=(1+G)*a1, ap2=(1+G)*a2, cp1=Math.hypot(ap1,b1), cp2=Math.hypot(ap2,b2);
+  const hp=(a,b)=>{const h=Math.atan2(b,a)*180/Math.PI;return h<0?h+360:h;}, h1=hp(ap1,b1), h2=hp(ap2,b2);
+  const dL=L2-L1,dC=cp2-cp1; let dh=h2-h1; if(cp1*cp2===0)dh=0; else if(dh>180)dh-=360; else if(dh<-180)dh+=360;
+  const dH=2*Math.sqrt(cp1*cp2)*Math.sin(dh*Math.PI/360), avgLp=(L1+L2)/2, avgCp=(cp1+cp2)/2;
+  let avgH;if(cp1*cp2===0)avgH=h1+h2;else if(Math.abs(h1-h2)<=180)avgH=(h1+h2)/2;else avgH=(h1+h2+360)/2; if(avgH>=360)avgH-=360;
+  const T=1-.17*Math.cos((avgH-30)*Math.PI/180)+.24*Math.cos(2*avgH*Math.PI/180)+.32*Math.cos((3*avgH+6)*Math.PI/180)-.20*Math.cos((4*avgH-63)*Math.PI/180);
+  const SL=1+.015*(avgLp-50)**2/Math.sqrt(20+(avgLp-50)**2),SC=1+.045*avgCp,SH=1+.015*avgCp*T;
+  const RT=-2*Math.sqrt(avgCp**7/(avgCp**7+25**7))*Math.sin((60*Math.exp(-(((avgH-275)/25)**2)))*Math.PI/180);
+  return Math.sqrt((dL/SL)**2+(dC/SC)**2+(dH/SH)**2+RT*(dC/SC)*(dH/SH));
+}
+function colorLabToHex(L,a,b) {
+  // CIE Lab (D65) -> XYZ -> sRGB, clipped only for the screen preview.
+  const f=(v)=>v>0.008856?v**(1/3):7.787*v+16/116, fi=(v)=>v**3>0.008856?v**3:(v-16/116)/7.787;
+  const fy=(L+16)/116, fx=a/500+fy, fz=fy-b/200, X=95.047*fi(fx)/100,Y=fi(fy),Z=108.883*fi(fz)/100;
+  let r=3.2406*X-1.5372*Y-.4986*Z,g=-.9689*X+1.8758*Y+.0415*Z,bb=.0557*X-.204*Y+1.057*Z;
+  const gamma=v=>{v=Math.max(0,Math.min(1,v));return v>.0031308?1.055*v**(1/2.4)-.055:12.92*v;};
+  const hex=v=>Math.round(gamma(v)*255).toString(16).padStart(2,'0').toUpperCase(); return '#'+hex(r)+hex(g)+hex(bb);
+}
 function colorApplyStandard() {
   const standard = document.getElementById('color-standard');
   const base = document.getElementById('color-base-de');
@@ -11921,23 +11993,34 @@ function colorRecalculate() {
   const [tL, ta, tb] = target;
   const [sL, sa, sb] = sample;
   const dL = sL - tL, da = sa - ta, db = sb - tb;
-  const deltaE = Math.sqrt(dL * dL + da * da + db * db);
+  const formula = (document.getElementById('color-formula') || {}).value || '76';
+  const deltaE76 = Math.sqrt(dL * dL + da * da + db * db);
+  const deltaE = formula === '94' ? colorDeltaE94(target, sample) : formula === 'cmc' ? colorDeltaECmc(target, sample) : formula === '2000' ? colorDeltaE2000(target, sample) : deltaE76;
   const targetC = colorChroma(ta, tb), sampleC = colorChroma(sa, sb);
   const targetH = colorHue(ta, tb), sampleH = colorHue(sa, sb);
+  const dC = sampleC-targetC, dH = Math.sqrt(Math.max(0, deltaE76**2-dL**2-dC**2));
+  const componentChecks = [['L', dL, 'color-tol-l'], ['a', da, 'color-tol-a'], ['b', db, 'color-tol-b'], ['C', dC, 'color-tol-c'], ['H', dH, 'color-tol-h']];
+  const componentFailures = componentChecks.filter(([,difference,id]) => { const limit=colorNumber(id); return Number.isFinite(limit) && Math.abs(difference)>limit; }).map(([name]) => 'Δ'+name+'*');
   const consumed = allowed ? deltaE / allowed * 100 : null;
-  const passes = allowed ? deltaE <= allowed : false;
+  const passes = allowed ? deltaE <= allowed && componentFailures.length === 0 : false;
 
   document.getElementById('color-target-c').textContent = colorFmt(targetC);
   document.getElementById('color-sample-c').textContent = colorFmt(sampleC);
   document.getElementById('color-target-h').textContent = colorFmt(targetH) + '°';
   document.getElementById('color-sample-h').textContent = colorFmt(sampleH) + '°';
   document.getElementById('color-deltas').textContent = `${colorSigned(dL)} / ${colorSigned(da)} / ${colorSigned(db)}`;
+  document.getElementById('color-lch-target-c').textContent=colorFmt(targetC); document.getElementById('color-lch-sample-c').textContent=colorFmt(sampleC);
+  document.getElementById('color-lch-target-h').textContent=colorFmt(targetH)+'°'; document.getElementById('color-lch-sample-h').textContent=colorFmt(sampleH)+'°';
+  document.getElementById('color-lch-difference').textContent=`${colorSigned(dC)} / ${colorSigned(dH)}`;
+  const targetHex=colorLabToHex(tL,ta,tb), sampleHex=colorLabToHex(sL,sa,sb);
+  document.getElementById('color-target-swatch').style.background=targetHex; document.getElementById('color-sample-swatch').style.background=sampleHex;
+  document.getElementById('color-target-hex').textContent=targetHex; document.getElementById('color-sample-hex').textContent=sampleHex;
 
   if (status) status.className = 'color-status ' + (passes ? 'pass' : 'fail');
   if (label) label.textContent = passes ? 'Color match passed' : 'Color match failed';
   if (value) value.textContent = `${passes ? 'PASS' : 'FAIL'} · ΔE ${colorFmt(deltaE)}`;
   if (detail) detail.textContent = allowed
-    ? `Allowed ΔE: ${colorFmt(allowed)} (${colorFmt(base)} base × ${colorFmt(pct, 0)}%). Tolerance used: ${colorFmt(consumed, 0)}%.`
+    ? `Allowed ΔE: ${colorFmt(allowed)} (${colorFmt(base)} base × ${colorFmt(pct, 0)}%). Tolerance used: ${colorFmt(consumed, 0)}%.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
     : 'Set a valid base ΔE limit and tolerance percentage.';
 
   const lightness = colorDirection(dL, `Sample is lighter by ${colorFmt(Math.abs(dL))}.`, `Sample is darker by ${colorFmt(Math.abs(dL))}.`, 'Lightness matches.');
