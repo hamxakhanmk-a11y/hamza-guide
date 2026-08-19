@@ -1296,6 +1296,11 @@
   .color-row:last-child { border-bottom:0; }
   .color-row.head { background:var(--bg2); color:var(--text2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
   .color-guidance { margin-top:12px; border:0; padding:11px 14px; background:var(--brand); color:#fff; font-size:13px; font-weight:600; line-height:1.55; border-radius:var(--radius-sm); box-shadow:0 2px 7px rgba(124,31,31,.18); }
+  .color-guidance.pass { background:#166534; box-shadow:0 2px 7px rgba(22,101,52,.18); }
+  .color-guidance.fail { background:var(--brand); }
+  .color-direction-list { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
+  .color-direction { display:inline-flex; align-items:center; gap:6px; }
+  .color-direction-swatch { width:15px; height:15px; flex:0 0 15px; border-radius:3px; border:1px solid rgba(255,255,255,.7); box-shadow:0 0 0 1px rgba(0,0,0,.12); }
   .color-actions { display:flex; justify-content:flex-end; margin-top:12px; }
   .color-subtabs { display:flex; gap:5px; overflow-x:auto; padding-bottom:2px; margin:0 0 14px; }
   .color-subtab { border:1px solid var(--border); background:#fff; color:var(--text2); padding:7px 10px; border-radius:6px; white-space:nowrap; cursor:pointer; font:600 12px var(--font); }
@@ -1357,14 +1362,14 @@
     <div class="color-tolerance"><div class="form-group"><label class="form-label" for="color-base-de">Tolerance Limit</label><input id="color-base-de" type="number" min="0.01" step="0.01" value="2.00" inputmode="decimal" oninput="colorRecalculate()"></div></div>
     <div class="color-inputs">
       <div class="color-panel target"><div class="color-panel-title">Target</div><div class="color-fields">
-        <div class="form-group"><label class="form-label" for="color-target-l">L*</label><input id="color-target-l" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="69.23" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-target-a">a*</label><input id="color-target-a" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="39.89" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-target-b">b*</label><input id="color-target-b" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="61.98" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-target-l">L*</label><input id="color-target-l" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-target-a">a*</label><input id="color-target-a" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-target-b">b*</label><input id="color-target-b" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
       </div></div>
       <div class="color-panel sample"><div class="color-panel-title">Sample</div><div class="color-fields">
-        <div class="form-group"><label class="form-label" for="color-sample-l">L*</label><input id="color-sample-l" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="75.70" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-sample-a">a*</label><input id="color-sample-a" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="36.13" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-sample-b">b*</label><input id="color-sample-b" type="number" step="0.01" inputmode="decimal" autocomplete="off" placeholder="74.19" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-sample-l">L*</label><input id="color-sample-l" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-sample-a">a*</label><input id="color-sample-a" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label" for="color-sample-b">b*</label><input id="color-sample-b" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
       </div></div>
     </div>
     <div id="color-lab-summary" class="color-results">
@@ -12114,7 +12119,7 @@ function colorRecalculate() {
     ['target-c','sample-c','target-h','sample-h','deltas'].forEach(k => { const el = document.getElementById('color-' + k); if (el) el.textContent = '—'; });
     const lchGuidance = document.getElementById('color-lch-guidance');
     if (lchGuidance) lchGuidance.textContent = 'Enter Target and Sample readings to explain the chroma and hue change.';
-    if (guidance) guidance.textContent = 'No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.';
+    if (guidance) { guidance.className = 'color-guidance'; guidance.textContent = 'No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.'; }
     return;
   }
 
@@ -12164,7 +12169,14 @@ function colorRecalculate() {
   const lightness = colorDirection(dL, `Sample is lighter by ${colorFmt(Math.abs(dL))}.`, `Sample is darker by ${colorFmt(Math.abs(dL))}.`, 'Lightness matches.');
   const redGreen = colorDirection(da, `It is redder by ${colorFmt(Math.abs(da))}.`, `It is greener by ${colorFmt(Math.abs(da))}.`, 'Red/green position matches.');
   const yellowBlue = colorDirection(db, `It is yellower by ${colorFmt(Math.abs(db))}.`, `It is bluer by ${colorFmt(Math.abs(db))}.`, 'Yellow/blue position matches.');
-  if (guidance) guidance.textContent = `${lightness} ${redGreen} ${yellowBlue} No CMYK correction is suggested until your press calibration data is added.`;
+  if (guidance) {
+    const directionItem = (color, text) => `<span class="color-direction"><i class="color-direction-swatch" style="background:${color}"></i>${text}</span>`;
+    const lightSwatch = dL > 0 ? '#ffffff' : dL < 0 ? '#171717' : '#a1a1aa';
+    const rgSwatch = da > 0 ? '#d42020' : da < 0 ? '#16803a' : '#a1a1aa';
+    const ybSwatch = db > 0 ? '#ffd51e' : db < 0 ? '#1769d8' : '#a1a1aa';
+    guidance.className = 'color-guidance ' + (passes ? 'pass' : 'fail');
+    guidance.innerHTML = `<div class="color-direction-list">${directionItem(lightSwatch, lightness)}${directionItem(rgSwatch, redGreen)}${directionItem(ybSwatch, yellowBlue)}</div><div style="margin-top:7px;">No CMYK correction is suggested until your press calibration data is added.</div>`;
+  }
 }
 
 // Move the floating calc popover INTO the main content area so it renders
@@ -12201,6 +12213,9 @@ window.addEventListener('load', () => {
     colorRenderProfile();
     if (typeof openCalculator === 'function') openCalculator();
   }, 150);
+});
+window.addEventListener('pageshow', event => {
+  if (event.persisted) colorClearInitialReadings();
 });
 setInterval(() => {
   const t = document.getElementById('hg-greet-text');
