@@ -1311,6 +1311,13 @@
   .color-swatch { min-height:150px; border-radius:var(--radius-sm); display:flex; flex-direction:column; justify-content:flex-end; overflow:hidden; border:1px solid var(--border); background:#ddd; }
   .color-swatch-info { background:rgba(20,20,20,.55); color:#fff; padding:11px; font-size:13px; font-weight:700; }
   .color-swatch-info small { display:block; font-weight:500; opacity:.9; margin-top:3px; }
+  .color-cmyk-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  .color-cmyk-card { border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:#fff; }
+  .color-cmyk-title { padding:9px 12px; background:var(--bg2); border-bottom:1px solid var(--border); font-size:13px; font-weight:750; }
+  .color-cmyk-values { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; padding:10px; }
+  .color-cmyk-value { text-align:center; min-width:0; }
+  .color-cmyk-value b { display:block; color:var(--text2); font-size:10px; letter-spacing:.06em; }
+  .color-cmyk-value span { display:block; margin-top:3px; color:var(--brand-dark); font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; }
   .color-setup-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
   .color-note { background:var(--bg2); border-left:3px solid var(--brand); border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:12px; color:var(--text2); font-size:12px; line-height:1.55; }
   .color-spectrum-empty { text-align:center; padding:28px 14px; border:1px dashed var(--border2); border-radius:var(--radius-sm); color:var(--text2); font-size:13px; line-height:1.6; }
@@ -1334,6 +1341,7 @@
     .color-head { margin-bottom:14px; }
     .color-condition { font-size:10px; }
     .color-setup-grid { grid-template-columns:1fr; }
+    .color-cmyk-grid { grid-template-columns:1fr; }
     .meter-row { grid-template-columns:1fr; gap:6px; }
     .meter-readonly { text-align:left; }
   }
@@ -1385,7 +1393,7 @@
       <div id="color-lch-guidance" class="color-guidance">Enter Target and Sample readings to explain the chroma and hue change.</div>
     </div>
     <div id="color-profiles-pane" class="color-extra-pane"></div>
-    <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-note" style="margin-top:12px;">These are sRGB screen-preview codes only. They are useful for comparing on-screen appearance, not for specifying press CMYK.</div></div>
+    <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-cmyk-grid"><div class="color-cmyk-card"><div class="color-cmyk-title">Target — estimated CMYK</div><div class="color-cmyk-values"><div class="color-cmyk-value"><b>C</b><span id="color-target-cmyk-c">—</span></div><div class="color-cmyk-value"><b>M</b><span id="color-target-cmyk-m">—</span></div><div class="color-cmyk-value"><b>Y</b><span id="color-target-cmyk-y">—</span></div><div class="color-cmyk-value"><b>K</b><span id="color-target-cmyk-k">—</span></div></div></div><div class="color-cmyk-card"><div class="color-cmyk-title">Sample — estimated CMYK</div><div class="color-cmyk-values"><div class="color-cmyk-value"><b>C</b><span id="color-sample-cmyk-c">—</span></div><div class="color-cmyk-value"><b>M</b><span id="color-sample-cmyk-m">—</span></div><div class="color-cmyk-value"><b>Y</b><span id="color-sample-cmyk-y">—</span></div><div class="color-cmyk-value"><b>K</b><span id="color-sample-cmyk-k">—</span></div></div></div></div><div class="color-note" style="margin-top:12px;"><b>Screen CMYK estimate only.</b> It converts the on-screen sRGB preview to generic CMYK. Use it as a starting idea, not as a press ink recipe; your saved press calibration will replace it later.</div></div>
     <div id="color-spectrum-pane" class="color-extra-pane"><div class="color-spectrum-empty"><b>Spectrum data not entered</b><br>To draw the real Target/Sample graph, enter or import the spectrophotometer reflectance values for each wavelength (for example 400–700 nm). Lab values alone cannot create a genuine spectral curve.</div></div>
     <div id="color-setup-pane" class="color-extra-pane"><div class="color-setup-grid"><div class="form-group"><label class="form-label">Difference Formula</label><select id="color-formula" onchange="colorRecalculate()"><option value="76">&Delta;E*ab / CIE76</option><option value="94">&Delta;E94 (graphic arts)</option><option value="cmc">&Delta;E CMC (2:1)</option><option value="2000">&Delta;E00 / CIEDE2000</option></select></div><div class="form-group"><label class="form-label">Geometry</label><select id="color-geometry"><option selected>SCI</option><option>SCE</option></select></div><div class="form-group"><label class="form-label">Observer Angle</label><select id="color-observer"><option value="10" selected>10&deg;</option><option value="2">2&deg;</option></select></div><div class="form-group"><label class="form-label">Illuminant</label><select id="color-illuminant"><option>A</option><option>C</option><option>D50</option><option>D55</option><option selected>D65</option><option>D75</option><option>F1</option><option>F2</option><option>F3</option><option>F4</option><option>F5</option><option>F6</option><option>F7</option><option>F8</option><option>F9</option><option>F10</option><option>F11</option><option>F12</option><option>CWF</option><option>U30</option></select></div></div><div class="color-note" style="margin-top:12px;">Optional component limits &mdash; leave blank to disable that check.</div><div class="color-setup-grid" style="margin-top:10px;"><div class="form-group"><label class="form-label">|&Delta;L*| limit</label><input id="color-tol-l" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;a*| limit</label><input id="color-tol-a" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;b*| limit</label><input id="color-tol-b" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">|&Delta;C*| limit</label><input id="color-tol-c" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div><div class="form-group"><label class="form-label">&Delta;H* limit</label><input id="color-tol-h" type="number" min="0" step=".01" inputmode="decimal" placeholder="Off" oninput="colorRecalculate()"></div></div><div class="color-note" style="margin-top:12px;">Use the exact geometry, illuminant, and observer shown by the instrument for this reading. Changing these settings does not transform an existing Lab reading; it documents the condition under which it was measured.</div></div>
     <div class="color-actions"><button class="btn btn-sm" type="button" onclick="colorReset()">Reset reading</button></div>
@@ -11902,10 +11910,8 @@ function hgShowTab(name) {
 }
 
 // -- Color Measurement & Matching ------------------------------------------
-// CIE 1976 L*a*b* / Delta E ab. The calculation stays entirely in Lab space:
-// a Lab->CMYK conversion would require the specific press ICC profile,
-// substrate, ink set, screening and calibration data and is intentionally
-// deferred until those inputs are available.
+// CIE 1976 L*a*b* / Delta E ab. A generic screen-CMYK estimate is also
+// displayed for quick reference; real press CMYK remains profile-specific.
 function colorNumber(id) {
   const el = document.getElementById(id);
   if (!el || el.value.trim() === '') return null;
@@ -12076,6 +12082,18 @@ function colorLabToHex(L,a,b) {
   const gamma=v=>{v=Math.max(0,Math.min(1,v));return v>.0031308?1.055*v**(1/2.4)-.055:12.92*v;};
   const hex=v=>Math.round(gamma(v)*255).toString(16).padStart(2,'0').toUpperCase(); return '#'+hex(r)+hex(g)+hex(bb);
 }
+function colorHexToCmyk(hex) {
+  const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const k = 1 - Math.max(...rgb);
+  const cmy = k >= 0.999 ? [0, 0, 0] : rgb.map(value => (1 - value - k) / (1 - k));
+  return [...cmy, k].map(value => Math.round(Math.max(0, Math.min(1, value)) * 100));
+}
+function colorSetCmyk(prefix, values) {
+  ['c','m','y','k'].forEach((key, index) => {
+    const el = document.getElementById(`color-${prefix}-cmyk-${key}`);
+    if (el) el.textContent = values ? `${values[index]}%` : '—';
+  });
+}
 function colorApplyStandard() {
   const standard = document.getElementById('color-standard');
   const base = document.getElementById('color-base-de');
@@ -12117,6 +12135,7 @@ function colorRecalculate() {
     if (value) value.textContent = '—';
     if (detail) detail.textContent = 'Enter all six L*a*b* values to calculate the match.';
     ['target-c','sample-c','target-h','sample-h','deltas'].forEach(k => { const el = document.getElementById('color-' + k); if (el) el.textContent = '—'; });
+    colorSetCmyk('target', null); colorSetCmyk('sample', null);
     const lchGuidance = document.getElementById('color-lch-guidance');
     if (lchGuidance) lchGuidance.textContent = 'Enter Target and Sample readings to explain the chroma and hue change.';
     if (guidance) { guidance.className = 'color-guidance'; guidance.textContent = 'No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.'; }
@@ -12157,6 +12176,7 @@ function colorRecalculate() {
   const targetHex=colorLabToHex(tL,ta,tb), sampleHex=colorLabToHex(sL,sa,sb);
   document.getElementById('color-target-swatch').style.background=targetHex; document.getElementById('color-sample-swatch').style.background=sampleHex;
   document.getElementById('color-target-hex').textContent=targetHex; document.getElementById('color-sample-hex').textContent=sampleHex;
+  colorSetCmyk('target', colorHexToCmyk(targetHex)); colorSetCmyk('sample', colorHexToCmyk(sampleHex));
 
   if (status) status.className = 'color-status ' + (passes ? 'pass' : 'fail');
   if (label) label.textContent = passes ? 'Color match passed' : 'Color match failed';
