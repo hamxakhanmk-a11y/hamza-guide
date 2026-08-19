@@ -1271,7 +1271,7 @@
   .color-card { max-width: 780px; }
   .color-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:18px; }
   .color-condition { font-size:11px; font-weight:700; color:var(--brand-dark); background:var(--brand-soft); padding:6px 8px; border-radius:5px; white-space:nowrap; }
-  .color-tolerance { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:10px; padding:12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:14px; }
+  .color-tolerance { display:grid; grid-template-columns:1fr; gap:10px; padding:12px; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:14px; }
   .color-tolerance .form-group { margin:0; }
   .color-readout { min-height:35px; display:flex; align-items:center; padding:7px 10px; border:1px solid var(--border2); border-radius:var(--radius-sm); background:#fff; color:var(--brand-dark); font-size:14px; font-weight:750; }
   .color-inputs { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
@@ -1351,11 +1351,7 @@
       <button class="color-subtab" id="color-tab-spectrum" onclick="colorShowView('spectrum')">Spectrum</button>
       <button class="color-subtab" id="color-tab-setup" onclick="colorShowView('setup')">Setup</button>
     </div>
-    <div class="color-tolerance">
-      <div class="form-group"><label class="form-label" for="color-base-de">&Delta;E Limit</label><input id="color-base-de" type="number" min="0.01" step="0.01" value="2.00" inputmode="decimal" oninput="colorRecalculate()"></div>
-      <div class="form-group"><label class="form-label" for="color-tolerance-pct">Tolerance %</label><input id="color-tolerance-pct" type="number" min="1" max="500" step="1" value="100" inputmode="numeric" oninput="colorRecalculate()"></div>
-      <div class="form-group"><label class="form-label">Final Allowed &Delta;E</label><div id="color-final-de" class="color-readout">2.00</div></div>
-    </div>
+    <div class="color-tolerance"><div class="form-group"><label class="form-label" for="color-base-de">Tolerance Limit</label><input id="color-base-de" type="number" min="0.01" step="0.01" value="2.00" inputmode="decimal" oninput="colorRecalculate()"></div></div>
     <div class="color-inputs">
       <div class="color-panel target"><div class="color-panel-title">Target</div><div class="color-fields">
         <div class="form-group"><label class="form-label" for="color-target-l">L*</label><input id="color-target-l" type="number" step="0.01" inputmode="decimal" placeholder="69.23" oninput="colorRecalculate()"></div>
@@ -11965,9 +11961,7 @@ function colorSettingsView(view) {
     <div class="meter-row"><span class="meter-label">2nd Light / Angle</span><span class="meter-readonly">A / 2° &mdash; comparison reference</span></div>`;
   else if (view === 'tolerance') out.innerHTML = `
     <div class="meter-section-title">Overall Difference</div>
-    <div class="meter-row"><label for="meter-base-de">ΔE Limit</label><input id="meter-base-de" type="number" min=".01" step=".01" value="2.00" inputmode="decimal" oninput="colorSetQuick('color-base-de',this.value)"></div>
-    <div class="meter-row"><label for="meter-tolerance-pct">Tolerance %</label><input id="meter-tolerance-pct" type="number" min="1" max="500" value="100" inputmode="numeric" oninput="colorSetQuick('color-tolerance-pct',this.value)"></div>
-    <div class="meter-row"><span class="meter-label">Final Allowed ΔE</span><span id="meter-final-de" class="meter-readonly">2.00</span></div>
+    <div class="meter-row"><label for="meter-base-de">Tolerance Limit</label><input id="meter-base-de" type="number" min=".01" step=".01" value="2.00" inputmode="decimal" oninput="colorSetQuick('color-base-de',this.value)"></div>
     <div class="meter-section-title">CIE Lab Component Limits</div>
     <div class="meter-row"><label for="meter-tol-l">|ΔL*| &mdash; light / dark</label><input id="meter-tol-l" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-l',this.value)"></div>
     <div class="meter-row"><label for="meter-tol-a">|Δa*| &mdash; red / green</label><input id="meter-tol-a" type="number" min="0" step=".01" placeholder="Off" inputmode="decimal" oninput="colorSetQuick('color-tol-a',this.value)"></div>
@@ -11979,7 +11973,7 @@ function colorSettingsView(view) {
     [['color-geometry','geometry'],['color-illuminant','illuminant'],['color-observer','observer'],['color-formula','formula']].forEach(([id,key]) => { const el=document.getElementById(id); if(el) el.value=colorProfileState[key]; });
   }
   if (view === 'tolerance') {
-    [['color-base-de','meter-base-de'],['color-tolerance-pct','meter-tolerance-pct'],['color-tol-l','meter-tol-l'],['color-tol-a','meter-tol-a'],['color-tol-b','meter-tol-b'],['color-tol-c','meter-tol-c'],['color-tol-h','meter-tol-h']].forEach(([source,target]) => { const a=document.getElementById(source),b=document.getElementById(target); if(a&&b)b.value=a.value; });
+    [['color-base-de','meter-base-de'],['color-tol-l','meter-tol-l'],['color-tol-a','meter-tol-a'],['color-tol-b','meter-tol-b'],['color-tol-c','meter-tol-c'],['color-tol-h','meter-tol-h']].forEach(([source,target]) => { const a=document.getElementById(source),b=document.getElementById(target); if(a&&b)b.value=a.value; });
   }
   colorRecalculate();
 }
@@ -12057,18 +12051,13 @@ function colorRecalculate() {
   const target = ['l','a','b'].map(k => colorNumber('color-target-' + k));
   const sample = ['l','a','b'].map(k => colorNumber('color-sample-' + k));
   const base = colorNumber('color-base-de');
-  const pct = colorNumber('color-tolerance-pct');
   const status = document.getElementById('color-status');
   const label = document.querySelector('#color-status .color-status-label');
   const value = document.getElementById('color-status-value');
   const detail = document.getElementById('color-status-detail');
   const guidance = document.getElementById('color-guidance');
   const complete = target.every(Number.isFinite) && sample.every(Number.isFinite);
-  const allowed = Number.isFinite(base) && base > 0 && Number.isFinite(pct) && pct > 0 ? base * pct / 100 : null;
-  const finalLimit = document.getElementById('color-final-de');
-  if (finalLimit) finalLimit.textContent = allowed ? colorFmt(allowed) : '—';
-  const meterFinalLimit = document.getElementById('meter-final-de');
-  if (meterFinalLimit) meterFinalLimit.textContent = allowed ? colorFmt(allowed) : '—';
+  const allowed = Number.isFinite(base) && base > 0 ? base : null;
 
   if (!complete) {
     if (status) status.className = 'color-status';
@@ -12106,7 +12095,7 @@ function colorRecalculate() {
   if (label) label.textContent = passes ? 'Color match passed' : 'Color match failed';
   if (value) value.textContent = `${passes ? 'PASS' : 'FAIL'} · ΔE ${colorFmt(deltaE)}`;
   if (detail) detail.textContent = allowed
-    ? `Allowed ΔE: ${colorFmt(allowed)} (${colorFmt(base)} limit × ${colorFmt(pct, 0)}%). Tolerance used: ${colorFmt(consumed, 0)}%.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
+    ? `Tolerance limit: ΔE ${colorFmt(allowed)}. Tolerance used: ${colorFmt(consumed, 0)}%.${componentFailures.length ? ' Component limit failed: '+componentFailures.join(', ')+'.' : ''}`
     : 'Set a valid base ΔE limit and tolerance percentage.';
 
   const lightness = colorDirection(dL, `Sample is lighter by ${colorFmt(Math.abs(dL))}.`, `Sample is darker by ${colorFmt(Math.abs(dL))}.`, 'Lightness matches.');
