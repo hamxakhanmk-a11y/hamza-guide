@@ -1279,9 +1279,11 @@
   .color-panel-title { padding:9px 12px; font-size:13px; font-weight:700; background:var(--bg2); border-bottom:1px solid var(--border); }
   .color-panel.target .color-panel-title { color:var(--brand-dark); }
   .color-panel.sample .color-panel-title { color:#166534; }
-  .color-fields { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:11px; }
+  .color-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; padding:8px; }
   .color-fields .form-group { margin:0; }
-  .color-fields input { text-align:center; font-weight:650; font-size:15px; }
+  .color-fields input { min-width:0; text-align:center; font-weight:650; font-size:15px; padding:8px 4px !important; font-variant-numeric:tabular-nums; }
+  .color-fields input[type=number]::-webkit-inner-spin-button, .color-fields input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  .color-fields input[type=number] { -moz-appearance:textfield; }
   .color-results { display:grid; grid-template-columns:1.15fr 1fr; gap:12px; }
   .color-status { border-radius:var(--radius-sm); padding:16px; color:#fff; background:#6b6960; min-height:145px; }
   .color-status.pass { background:#166534; }
