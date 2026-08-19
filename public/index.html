@@ -12160,6 +12160,7 @@ function colorSetCmyk(prefix, values, emptyText = '—') {
   });
 }
 const colorIccState = { ready:null, engine:null, labProfile:null, profiles:{}, transforms:{}, request:0 };
+const colorIccAssetVersion = '20260819-2';
 const colorIccProfiles = {
   coated: { path:'/icc/PSOcoated_v3.icc', label:'PSO Coated v3 / FOGRA51' },
   uncoated: { path:'/icc/PSOuncoated_v3_FOGRA52.icc', label:'PSO Uncoated v3 / FOGRA52' },
@@ -12182,8 +12183,8 @@ function colorIccEncodeLab([L, a, b]) {
 async function colorLoadIcc() {
   if (colorIccState.ready) return colorIccState.ready;
   colorIccState.ready = (async () => {
-    const module = await import('/vendor/lcms/lcms.min.js');
-    const engine = await module.instantiate({ locateFile:name => '/vendor/lcms/' + name });
+    const module = await import('/vendor/lcms/lcms.min.js?v=' + colorIccAssetVersion);
+    const engine = await module.instantiate({ locateFile:name => '/vendor/lcms/' + name + '?v=' + colorIccAssetVersion });
     colorIccState.engine = engine;
     colorIccState.labProfile = engine.cmsCreateLab4Profile();
     return module;
@@ -12195,7 +12196,7 @@ async function colorLoadIccProfile(key) {
   if (colorIccState.transforms[key]) return;
   const profile = colorIccProfiles[key];
   if (!profile) throw new Error('Unsupported ICC profile');
-  const response = await fetch(profile.path);
+  const response = await fetch(profile.path + '?v=' + colorIccAssetVersion);
   if (!response.ok) throw new Error(`Could not load ${profile.label}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   const handle = colorIccState.engine.cmsOpenProfileFromMem(bytes, bytes.byteLength);
