@@ -1377,7 +1377,7 @@
     <div id="color-guidance" class="color-guidance">No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.</div>
     <div id="color-lch-pane" class="color-extra-pane">
       <div class="color-data"><div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div><div class="color-row"><span>Chroma C*</span><span id="color-lch-target-c">&mdash;</span><span id="color-lch-sample-c">&mdash;</span></div><div class="color-row"><span>Hue h&deg;</span><span id="color-lch-target-h">&mdash;</span><span id="color-lch-sample-h">&mdash;</span></div><div class="color-row"><span>&Delta;C* / &Delta;H*</span><span>&mdash;</span><span id="color-lch-difference">&mdash;</span></div></div>
-      <div class="color-note" style="margin-top:12px;">CIE LCh is derived directly from CIE Lab. C* describes chroma; h&deg; describes hue angle.</div>
+      <div id="color-lch-guidance" class="color-guidance">Enter Target and Sample readings to explain the chroma and hue change.</div>
     </div>
     <div id="color-profiles-pane" class="color-extra-pane"></div>
     <div id="color-code-pane" class="color-extra-pane"><div class="color-swatch-grid"><div id="color-target-swatch" class="color-swatch"><div class="color-swatch-info">Target <small id="color-target-hex">Enter Lab values</small></div></div><div id="color-sample-swatch" class="color-swatch"><div class="color-swatch-info">Sample <small id="color-sample-hex">Enter Lab values</small></div></div></div><div class="color-note" style="margin-top:12px;">These are sRGB screen-preview codes only. They are useful for comparing on-screen appearance, not for specifying press CMYK.</div></div>
@@ -12112,6 +12112,8 @@ function colorRecalculate() {
     if (value) value.textContent = '—';
     if (detail) detail.textContent = 'Enter all six L*a*b* values to calculate the match.';
     ['target-c','sample-c','target-h','sample-h','deltas'].forEach(k => { const el = document.getElementById('color-' + k); if (el) el.textContent = '—'; });
+    const lchGuidance = document.getElementById('color-lch-guidance');
+    if (lchGuidance) lchGuidance.textContent = 'Enter Target and Sample readings to explain the chroma and hue change.';
     if (guidance) guidance.textContent = 'No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.';
     return;
   }
@@ -12134,6 +12136,20 @@ function colorRecalculate() {
   document.getElementById('color-lch-target-c').textContent=colorFmt(targetC); document.getElementById('color-lch-sample-c').textContent=colorFmt(sampleC);
   document.getElementById('color-lch-target-h').textContent=colorFmt(targetH)+'°'; document.getElementById('color-lch-sample-h').textContent=colorFmt(sampleH)+'°';
   document.getElementById('color-lch-difference').textContent=`${colorSigned(dC)} / ${colorSigned(dH)}`;
+  const lchGuidance = document.getElementById('color-lch-guidance');
+  if (lchGuidance) {
+    const chromaExplanation = colorDirection(dC,
+      `The sample has stronger chroma (is more saturated) by ${colorFmt(Math.abs(dC))}.`,
+      `The sample has lower chroma (is less saturated) by ${colorFmt(Math.abs(dC))}.`,
+      'The chroma matches the target.'
+    );
+    const hueExplanation = colorDirection(sampleH - targetH,
+      `Its hue angle is ${colorFmt(Math.abs(sampleH - targetH))}° higher than the target.`,
+      `Its hue angle is ${colorFmt(Math.abs(sampleH - targetH))}° lower than the target.`,
+      'Its hue angle matches the target.'
+    );
+    lchGuidance.textContent = `${chromaExplanation} ${hueExplanation}`;
+  }
   const targetHex=colorLabToHex(tL,ta,tb), sampleHex=colorLabToHex(sL,sa,sb);
   document.getElementById('color-target-swatch').style.background=targetHex; document.getElementById('color-sample-swatch').style.background=sampleHex;
   document.getElementById('color-target-hex').textContent=targetHex; document.getElementById('color-sample-hex').textContent=sampleHex;
