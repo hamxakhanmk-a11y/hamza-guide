@@ -354,6 +354,22 @@ async function initDb() {
       )
     `;
     await sql`CREATE INDEX IF NOT EXISTS press_profiles_machine_idx ON press_profiles(machine)`;
+    await sql`
+      CREATE TABLE IF NOT EXISTS press_calibration_readings (
+        id               SERIAL PRIMARY KEY,
+        press_profile_id INTEGER NOT NULL REFERENCES press_profiles(id) ON DELETE CASCADE,
+        c                NUMERIC(6,2) NOT NULL,
+        m                NUMERIC(6,2) NOT NULL,
+        y                NUMERIC(6,2) NOT NULL,
+        k                NUMERIC(6,2) NOT NULL,
+        lab_l            NUMERIC(8,3) NOT NULL,
+        lab_a            NUMERIC(8,3) NOT NULL,
+        lab_b            NUMERIC(8,3) NOT NULL,
+        notes            TEXT,
+        created_at       TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS press_calibration_profile_idx ON press_calibration_readings(press_profile_id, id DESC)`;
 
     console.log('Database ready');
   } catch (err) {
@@ -2381,6 +2397,41 @@ app.delete('/api/press-profiles/:id', requireWriteUser, async (req, res) => {
     const sql = getDb();
     const rows = await sql`DELETE FROM press_profiles WHERE id=${req.params.id} RETURNING id`;
     if (!rows.length) return res.status(404).json({ error: 'Press profile not found' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/press-profiles/:id/calibration', requireAuth, async (req, res) => {
+  try {
+    await dbReady;
+    const sql = getDb();
+    res.json(await sql`SELECT * FROM press_calibration_readings WHERE press_profile_id=${req.params.id} ORDER BY id DESC`);
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/press-profiles/:id/calibration', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const d = req.body || {};
+    const values = ['c','m','y','k','lab_l','lab_a','lab_b'].map(key => Number(d[key]));
+    if (!values.every(Number.isFinite)) return res.status(400).json({ error: 'Enter all CMYK and Lab values' });
+    if (values.slice(0, 4).some(value => value < 0 || value > 100)) return res.status(400).json({ error: 'CMYK values must be from 0 to 100' });
+    const sql = getDb();
+    const rows = await sql`
+      INSERT INTO press_calibration_readings (press_profile_id,c,m,y,k,lab_l,lab_a,lab_b,notes)
+      VALUES (${req.params.id},${values[0]},${values[1]},${values[2]},${values[3]},${values[4]},${values[5]},${values[6]},${String(d.notes||'').trim()||null})
+      RETURNING *
+    `;
+    res.status(201).json(rows[0]);
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/press-calibration/:id', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const sql = getDb();
+    const rows = await sql`DELETE FROM press_calibration_readings WHERE id=${req.params.id} RETURNING id`;
+    if (!rows.length) return res.status(404).json({ error: 'Calibration reading not found' });
     res.json({ ok: true });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
