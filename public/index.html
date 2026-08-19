@@ -1348,7 +1348,6 @@
     <div class="color-subtabs" role="tablist" aria-label="Color measurement views">
       <button class="color-subtab active" id="color-tab-lab" onclick="colorShowView('lab')">Lab Difference</button>
       <button class="color-subtab" id="color-tab-lch" onclick="colorShowView('lch')">C* &amp; h&deg;</button>
-      <button class="color-subtab" id="color-tab-code" onclick="colorShowView('code')">Color Code</button>
       <button class="color-subtab" id="color-tab-spectrum" onclick="colorShowView('spectrum')">Spectrum</button>
       <button class="color-subtab" id="color-tab-setup" onclick="colorShowView('setup')">Setup</button>
     </div>
@@ -1373,8 +1372,6 @@
       <div id="color-status" class="color-status"><div class="color-status-label">Waiting for readings</div><div id="color-status-value" class="color-status-value">&mdash;</div><div id="color-status-detail" class="color-status-detail">Enter all six L*a*b* values to calculate the match.</div></div>
       <div class="color-data">
         <div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div>
-        <div class="color-row"><span>C* (chroma)</span><span id="color-target-c">&mdash;</span><span id="color-sample-c">&mdash;</span></div>
-        <div class="color-row"><span>h&deg; (hue)</span><span id="color-target-h">&mdash;</span><span id="color-sample-h">&mdash;</span></div>
         <div class="color-row"><span>&Delta;L* / &Delta;a* / &Delta;b*</span><span>&mdash;</span><span id="color-deltas">&mdash;</span></div>
       </div>
     </div>
@@ -11893,6 +11890,7 @@ function hgShowTab(name) {
   const colorPane = document.getElementById('hg-color-pane');
   if (inboxPane) inboxPane.style.display = (name === 'inbox') ? 'block' : 'none';
   if (colorPane) colorPane.style.display = (name === 'color') ? 'block' : 'none';
+  if (name === 'color') colorShowView('lab');
   if (name === 'job'   && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
   else if (name === 'paper' && typeof openCalculator    === 'function') openCalculator();
   else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
@@ -11925,12 +11923,14 @@ function colorDirection(value, positive, negative, neutral) {
   return value > 0 ? positive : negative;
 }
 function colorShowView(view) {
-  ['lab','lch','code','spectrum','setup'].forEach(name => {
+  ['lab','lch','spectrum','setup'].forEach(name => {
     const tab = document.getElementById('color-tab-' + name);
     if (tab) tab.classList.toggle('active', name === view);
     const pane = document.getElementById('color-' + name + '-pane');
     if (pane) pane.classList.toggle('active', name === view);
   });
+  const codePane = document.getElementById('color-code-pane');
+  if (codePane) codePane.classList.toggle('active', view === 'lab');
   const summary = document.getElementById('color-lab-summary');
   const guidance = document.getElementById('color-guidance');
   const quickTolerance = document.querySelector('#hg-color-pane > .color-tolerance');
@@ -12094,10 +12094,6 @@ function colorRecalculate() {
   const consumed = allowed ? deltaE / allowed * 100 : null;
   const passes = allowed ? deltaE <= allowed && componentFailures.length === 0 : false;
 
-  document.getElementById('color-target-c').textContent = colorFmt(targetC);
-  document.getElementById('color-sample-c').textContent = colorFmt(sampleC);
-  document.getElementById('color-target-h').textContent = colorFmt(targetH) + '°';
-  document.getElementById('color-sample-h').textContent = colorFmt(sampleH) + '°';
   document.getElementById('color-deltas').textContent = `${colorSigned(dL)} / ${colorSigned(da)} / ${colorSigned(db)}`;
   document.getElementById('color-lch-target-c').textContent=colorFmt(targetC); document.getElementById('color-lch-sample-c').textContent=colorFmt(sampleC);
   document.getElementById('color-lch-target-h').textContent=colorFmt(targetH)+'°'; document.getElementById('color-lch-sample-h').textContent=colorFmt(sampleH)+'°';
