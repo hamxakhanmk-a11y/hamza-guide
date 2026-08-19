@@ -1295,6 +1295,10 @@
   .color-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; padding:8px 10px; border-bottom:1px solid var(--border); font-size:12px; }
   .color-row:last-child { border-bottom:0; }
   .color-row.head { background:var(--bg2); color:var(--text2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .color-lab-differences { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .color-lab-difference { min-width:0; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:#fff; }
+  .color-lab-difference-label { padding:7px 10px; background:var(--bg2); border-bottom:1px solid var(--border); color:var(--text2); font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; }
+  .color-lab-difference-value { display:flex; align-items:center; gap:7px; min-height:39px; padding:7px 10px; color:var(--brand-dark); font-size:13px; font-weight:750; white-space:nowrap; }
   .color-guidance { margin-top:12px; border:0; padding:11px 14px; background:var(--brand); color:#fff; font-size:13px; font-weight:600; line-height:1.55; border-radius:var(--radius-sm); box-shadow:0 2px 7px rgba(124,31,31,.18); }
   .color-guidance.pass { background:#166534; box-shadow:0 2px 7px rgba(22,101,52,.18); }
   .color-guidance.fail { background:var(--brand); }
@@ -1344,6 +1348,8 @@
     .color-condition { font-size:10px; }
     .color-setup-grid { grid-template-columns:1fr; }
     .color-cmyk-grid { grid-template-columns:1fr; }
+    .color-lab-differences { gap:5px; }
+    .color-lab-difference-value { padding:7px 6px; gap:4px; font-size:11px; }
     .meter-row { grid-template-columns:1fr; gap:6px; }
     .meter-readonly { text-align:left; }
   }
@@ -1383,10 +1389,7 @@
       </div></div>
     </div>
     <div id="color-lab-summary" class="color-results">
-      <div class="color-data">
-        <div class="color-row head"><span>Metric</span><span>Target</span><span>Sample / Difference</span></div>
-        <div class="color-row"><span>&Delta;L* / &Delta;a* / &Delta;b*</span><span>&mdash;</span><span id="color-deltas">&mdash;</span></div>
-      </div>
+      <div class="color-lab-differences" aria-label="Lab component differences"><div class="color-lab-difference"><div class="color-lab-difference-label">&Delta;L*</div><div id="color-diff-l" class="color-lab-difference-value">&mdash;</div></div><div class="color-lab-difference"><div class="color-lab-difference-label">&Delta;a*</div><div id="color-diff-a" class="color-lab-difference-value">&mdash;</div></div><div class="color-lab-difference"><div class="color-lab-difference-label">&Delta;b*</div><div id="color-diff-b" class="color-lab-difference-value">&mdash;</div></div></div>
       <div id="color-status" class="color-status"><div class="color-status-label">Waiting for readings</div><div id="color-status-value" class="color-status-value">&mdash;</div><div id="color-status-detail" class="color-status-detail">Enter all six L*a*b* values to calculate the match.</div></div>
     </div>
     <div id="color-guidance" class="color-guidance">No CMYK estimate is shown: accurate CMYK guidance needs your press ICC profile and calibration data.</div>
@@ -12096,6 +12099,19 @@ function colorSetCmyk(prefix, values) {
     if (el) el.textContent = values ? `${values[index]}%` : '—';
   });
 }
+function colorSetLabDifference(id, value, positiveColor, positiveLabel, negativeColor, negativeLabel) {
+  const el = document.getElementById('color-diff-' + id);
+  if (!el) return;
+  if (!Number.isFinite(value)) { el.textContent = '—'; return; }
+  if (Math.abs(value) < 0.005) {
+    el.innerHTML = `<i class="color-direction-swatch" style="background:#a1a1aa"></i>${colorSigned(value)} · Match`;
+    return;
+  }
+  const isPositive = value >= 0;
+  const color = isPositive ? positiveColor : negativeColor;
+  const label = isPositive ? positiveLabel : negativeLabel;
+  el.innerHTML = `<i class="color-direction-swatch" style="background:${color}"></i>${colorSigned(value)} · ${label}`;
+}
 function colorApplyStandard() {
   const standard = document.getElementById('color-standard');
   const base = document.getElementById('color-base-de');
@@ -12136,7 +12152,8 @@ function colorRecalculate() {
     if (label) label.textContent = 'Waiting for readings';
     if (value) value.textContent = '—';
     if (detail) detail.textContent = 'Enter all six L*a*b* values to calculate the match.';
-    ['target-c','sample-c','target-h','sample-h','deltas'].forEach(k => { const el = document.getElementById('color-' + k); if (el) el.textContent = '—'; });
+    ['target-c','sample-c','target-h','sample-h'].forEach(k => { const el = document.getElementById('color-' + k); if (el) el.textContent = '—'; });
+    ['l','a','b'].forEach(key => colorSetLabDifference(key, null));
     colorSetCmyk('target', null); colorSetCmyk('sample', null);
     const lchGuidance = document.getElementById('color-lch-guidance');
     if (lchGuidance) lchGuidance.textContent = 'Enter Target and Sample readings to explain the chroma and hue change.';
@@ -12157,7 +12174,9 @@ function colorRecalculate() {
   const componentFailures = componentChecks.filter(([,difference,id]) => { const limit=colorNumber(id); return Number.isFinite(limit) && Math.abs(difference)>limit; }).map(([name]) => 'Δ'+name+'*');
   const passes = allowed ? deltaE <= allowed && componentFailures.length === 0 : false;
 
-  document.getElementById('color-deltas').textContent = `${colorSigned(dL)} / ${colorSigned(da)} / ${colorSigned(db)}`;
+  colorSetLabDifference('l', dL, '#ffffff', 'White', '#171717', 'Black');
+  colorSetLabDifference('a', da, '#d42020', 'Red', '#16803a', 'Green');
+  colorSetLabDifference('b', db, '#ffd51e', 'Yellow', '#1769d8', 'Blue');
   document.getElementById('color-lch-target-c').textContent=colorFmt(targetC); document.getElementById('color-lch-sample-c').textContent=colorFmt(sampleC);
   document.getElementById('color-lch-target-h').textContent=colorFmt(targetH)+'°'; document.getElementById('color-lch-sample-h').textContent=colorFmt(sampleH)+'°';
   document.getElementById('color-lch-difference').textContent=`${colorSigned(dC)} / ${colorSigned(dH)}`;
