@@ -1299,6 +1299,9 @@
   .color-lab-difference { min-width:0; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; background:#fff; }
   .color-lab-difference-label { padding:7px 10px; background:var(--bg2); border-bottom:1px solid var(--border); color:var(--text2); font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; }
   .color-lab-difference-value { display:flex; align-items:center; gap:7px; min-height:39px; padding:7px 10px; color:var(--brand-dark); font-size:13px; font-weight:750; white-space:nowrap; }
+  .color-signed-label { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .color-minus-button { min-width:25px; height:21px; padding:0 7px; border:1px solid var(--border); border-radius:5px; background:var(--bg2); color:var(--brand-dark); font:800 16px/1 Arial,sans-serif; cursor:pointer; }
+  .color-minus-button:active { background:var(--brand); color:#fff; }
   .color-guidance { margin-top:12px; border:0; padding:11px 14px; background:var(--brand); color:#fff; font-size:13px; font-weight:600; line-height:1.55; border-radius:var(--radius-sm); box-shadow:0 2px 7px rgba(124,31,31,.18); }
   .color-guidance.pass { background:#166534; box-shadow:0 2px 7px rgba(22,101,52,.18); }
   .color-guidance.fail { background:var(--brand); }
@@ -1382,13 +1385,13 @@
     <div class="color-inputs">
       <div class="color-panel target"><div class="color-panel-title">Target</div><div class="color-fields">
         <div class="form-group"><label class="form-label" for="color-target-l">L*</label><input id="color-target-l" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-target-a">a*</label><input id="color-target-a" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-target-b">b*</label><input id="color-target-b" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label color-signed-label" for="color-target-a">a* <button class="color-minus-button" type="button" title="Make this value negative" onclick="colorMakeNegative('color-target-a')">−</button></label><input id="color-target-a" type="text" inputmode="text" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label color-signed-label" for="color-target-b">b* <button class="color-minus-button" type="button" title="Make this value negative" onclick="colorMakeNegative('color-target-b')">−</button></label><input id="color-target-b" type="text" inputmode="text" autocomplete="off" oninput="colorRecalculate()"></div>
       </div></div>
       <div class="color-panel sample"><div class="color-panel-title">Sample</div><div class="color-fields">
         <div class="form-group"><label class="form-label" for="color-sample-l">L*</label><input id="color-sample-l" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-sample-a">a*</label><input id="color-sample-a" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
-        <div class="form-group"><label class="form-label" for="color-sample-b">b*</label><input id="color-sample-b" type="number" step="0.01" inputmode="decimal" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label color-signed-label" for="color-sample-a">a* <button class="color-minus-button" type="button" title="Make this value negative" onclick="colorMakeNegative('color-sample-a')">−</button></label><input id="color-sample-a" type="text" inputmode="text" autocomplete="off" oninput="colorRecalculate()"></div>
+        <div class="form-group"><label class="form-label color-signed-label" for="color-sample-b">b* <button class="color-minus-button" type="button" title="Make this value negative" onclick="colorMakeNegative('color-sample-b')">−</button></label><input id="color-sample-b" type="text" inputmode="text" autocomplete="off" oninput="colorRecalculate()"></div>
       </div></div>
     </div>
     <div id="color-lab-summary" class="color-results">
@@ -12158,6 +12161,15 @@ function colorSetCmyk(prefix, values, emptyText = '—') {
     const el = document.getElementById(`color-${prefix}-cmyk-${key}`);
     if (el) el.textContent = values ? `${values[index]}%` : emptyText;
   });
+}
+function colorMakeNegative(id) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  const value = String(input.value || '').trim();
+  input.value = value.startsWith('-') ? value : '-' + value;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  colorRecalculate();
 }
 const colorIccState = { ready:null, engine:null, labProfile:null, profiles:{}, transforms:{}, request:0 };
 const colorIccAssetVersion = '20260819-2';
