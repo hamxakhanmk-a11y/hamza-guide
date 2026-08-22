@@ -810,6 +810,15 @@
     .job-top { flex-direction: column; }
     .job-actions { flex-direction: row; }
     .main { padding: 1rem; }
+    /* Admin / inventory cards used to keep every control on one long row.
+       On a phone the last action (often Remove / ×) could land outside the
+       visible screen. Let the details stay readable and give actions a full,
+       tappable row below. */
+    .inv-card { flex-wrap: wrap; gap: 10px; padding: 12px; }
+    .inv-card .inv-main { min-width: 0; }
+    .inv-card .inv-balance { margin-left: auto; max-width: 100%; }
+    .inv-card .inv-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .inv-card .inv-actions .btn { width: 100%; min-width: 0; }
   }
 /* Job card style for the New/Edit form — mirrors paper layout */
 .modal-card { max-width: 760px !important; }
@@ -2233,6 +2242,7 @@ function setMode(m) {
   } else if (m === 'users') {
     addBtn.style.display = 'none';
     exportBtn.style.display = 'none';
+    refreshBtn.style.display = '';
     loadUsersAndAudit();
   } else if (m === 'station') {
     addBtn.style.display = 'none';
@@ -2248,7 +2258,7 @@ function setMode(m) {
 function refreshCurrent() {
   if (mode === 'jobs') loadJobs();
   else if (mode === 'inventory') loadInventory();
-  else if (mode === 'users') loadUsersAndAudit();
+  else if (mode === 'users') loadUsersAndAudit(true);
   else if (mode === 'station') loadJobs().then(stationRender);
 }
 
@@ -10989,10 +10999,21 @@ async function exportCSV() {
 // ── Users tab ────────────────────────────────────────────────
 let usersList = [];
 let auditList = [];
-
 let operatorsList = [];
-async function loadUsersAndAudit() {
-  try {
+let usersAuditLoadedAt = 0;
+let usersAuditLoading = null;
+const USERS_AUDIT_CACHE_MS = 90 * 1000;
+
+async function loadUsersAndAudit(force = false) {
+  // Opening Admin should feel instant after the first load. The old code
+  // re-requested Users + Activity + Operators every time the tab opened.
+  if (!force && usersAuditLoadedAt && Date.now() - usersAuditLoadedAt < USERS_AUDIT_CACHE_MS) {
+    renderUsersTab(); renderOperators();
+    return;
+  }
+  if (usersAuditLoading) return usersAuditLoading;
+  usersAuditLoading = (async () => {
+    try {
     const reqs = [
       api('GET', '/api/users'),
       api('GET', '/api/audit?limit=50'),
@@ -11003,11 +11024,16 @@ async function loadUsersAndAudit() {
     usersList = u;
     auditList = a;
     operatorsList = ops || [];
+    usersAuditLoadedAt = Date.now();
     renderUsersTab();
     renderOperators();
   } catch (e) {
     notify('Error loading users: ' + e.message);
+  } finally {
+    usersAuditLoading = null;
   }
+  })();
+  return usersAuditLoading;
 }
 
 // ── Floor operators management (admin) ───────────────────────
@@ -11778,7 +11804,7 @@ async function saveInvite() {
   showSaving(true);
   try {
     await api('POST', '/api/users', { email, role });
-    await loadUsersAndAudit();
+    await loadUsersAndAudit(true);
     closeModal(); notify('User invited');
   } catch(e) { notify('Error: ' + e.message); }
   showSaving(false);
@@ -11787,9 +11813,9 @@ async function changeUserRole(id, role) {
   showSaving(true);
   try {
     await api('PUT', `/api/users/${id}`, { role });
-    await loadUsersAndAudit();
+    await loadUsersAndAudit(true);
     notify('Role updated');
-  } catch(e) { notify('Error: ' + e.message); await loadUsersAndAudit(); }
+  } catch(e) { notify('Error: ' + e.message); await loadUsersAndAudit(true); }
   showSaving(false);
 }
 async function removeUser(id) {
@@ -11803,7 +11829,7 @@ async function removeUser(id) {
   showSaving(true);
   try {
     await api('DELETE', `/api/users/${id}`);
-    await loadUsersAndAudit();
+    await loadUsersAndAudit(true);
     notify('User removed');
   } catch(e) { notify('Error: ' + e.message); }
   showSaving(false);
