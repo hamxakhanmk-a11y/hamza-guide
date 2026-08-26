@@ -804,7 +804,33 @@
   .h-note { color: var(--text2); margin-top: 2px; }
   .notif { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--text); color: white; padding: 10px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; z-index: 300; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
   .notif.show { opacity: 1; }
-  #loading-screen { display:flex; position:fixed; inset:0; background:var(--bg3); z-index:999; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+  #loading-screen { display:flex; position:fixed; inset:0; background:var(--bg3); z-index:999; align-items:center; justify-content:center; flex-direction:column; gap:12px; cursor:pointer; transition: opacity 0.4s ease; }
+  #loading-screen.intro-fade-out { opacity: 0; }
+  /* App intro — "Round Logo: Sliding Name": the calligraphy mark
+     settles into a round badge, then the English name slides in
+     beside it. Plays once per page load; click anywhere to skip. */
+  .app-intro-row { display: flex; align-items: center; }
+  .app-intro-logo {
+    width: 96px; height: 96px; border-radius: 50%; background: #fff;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    flex: 0 0 auto;
+    opacity: 0; transform: scale(0.8);
+    animation: introLogoIn 0.9s cubic-bezier(.22,.9,.32,1.2) forwards;
+  }
+  .app-intro-logo img { width: 99%; height: 99%; object-fit: contain; }
+  .app-intro-name {
+    display: flex; flex-direction: column; align-items: flex-start; margin-left: 18px;
+    opacity: 0; transform: translateX(28px);
+    animation: introNameIn 0.9s cubic-bezier(.16,1,.3,1) 0.55s forwards;
+  }
+  .app-intro-name-main { font-size: 26px; font-weight: 800; color: var(--text); letter-spacing: 0.01em; line-height: 1.15; }
+  .app-intro-name-sub  { font-size: 13px; font-weight: 500; color: var(--brand); margin-top: 3px; }
+  @keyframes introLogoIn { to { opacity: 1; transform: scale(1); } }
+  @keyframes introNameIn { to { opacity: 1; transform: translateX(0); } }
+  @media (prefers-reduced-motion: reduce) {
+    .app-intro-logo, .app-intro-name { animation: none; opacity: 1; transform: none; }
+  }
   @media (max-width: 600px) {
     .form-row { grid-template-columns: 1fr; }
     .job-top { flex-direction: column; }
@@ -1147,8 +1173,13 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <div id="loading-screen">
-  <div style="font-size:16px;font-weight:600;color:var(--text);">Hamza Guide</div>
-  <div style="font-size:13px;color:var(--text2);">Loading...</div>
+  <div class="app-intro-row">
+    <div class="app-intro-logo"><img src="/logo.png" alt="Supreme Art"></div>
+    <div class="app-intro-name">
+      <div class="app-intro-name-main">Supreme Art</div>
+      <div class="app-intro-name-sub">Private Limited</div>
+    </div>
+  </div>
 </div>
 
 <!-- Login screen kept hidden — Hamza Guide is single-user, no auth.
@@ -1429,7 +1460,12 @@
     padding: 14px 16px; transition: box-shadow 0.15s ease, transform 0.15s ease;
     display: flex; flex-direction: column; min-width: 0; cursor: pointer;
   }
-  .hg-job-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); border-color: var(--brand-soft); }
+  .hg-job-card:hover {
+    box-shadow: 0 6px 22px rgba(0,0,0,0.10);
+    transform: translateY(-2px) scale(1.015);
+    z-index: 2;
+    border-color: var(--brand-soft);
+  }
   .hg-job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
   .hg-job-id  { color: var(--brand); font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
   .hg-job-mrp {
@@ -12956,13 +12992,33 @@ setInterval(() => {
   if (t && typeof greetingForNow === 'function') t.textContent = greetingForNow();
 }, 60 * 60 * 1000);
 
-// Safety net: if tracker init() throws for any reason (DB error, missing DOM
-// element, etc.), force-hide the loading screen after 2s so the user at
-// least sees the Hamza Guide shell.
-setTimeout(() => {
-  const ls = document.getElementById('loading-screen');
-  if (ls) ls.style.display = 'none';
-}, 2000);
+// App intro — "Round Logo: Sliding Name" (ported from the tracker).
+// Logo settles in ~0.9s, name slides in around 1.45s, then we hold
+// briefly before fading out. Click anywhere on the overlay to skip.
+// Also serves as the safety net: if tracker init() throws before
+// hiding the loading screen, this timer still ensures the shell
+// becomes visible.
+(function hgWireIntro() {
+  const el = document.getElementById('loading-screen');
+  if (!el) return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const MIN_MS = reducedMotion ? 300 : 2600;
+  let skip;
+  const minTime = new Promise(r => { skip = r; setTimeout(r, MIN_MS); });
+  el.addEventListener('click', () => skip(), { once: true });
+  // Lock scroll so a scrollbar appearing under the fixed overlay
+  // doesn't nudge the intro left as it lands.
+  document.documentElement.style.overflow = 'hidden';
+  document.body.style.overflow = 'hidden';
+  minTime.then(() => {
+    el.classList.add('intro-fade-out');
+    setTimeout(() => {
+      el.style.display = 'none';
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    }, 400);
+  });
+})();
 </script>
 </body>
 </html>
