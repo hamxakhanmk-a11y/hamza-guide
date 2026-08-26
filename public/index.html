@@ -1444,6 +1444,27 @@
     font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
     padding: 2px 6px; border-radius: 8px; vertical-align: middle;
   }
+  /* Inventory badges (Low / Out / Offcut). Reuses the Jobs card grid
+     via .hg-jobs-grid + .hg-job-card so mobile layout is identical.
+     .hg-static-card removes the pointer/hover-lift since inv items
+     aren't editable (yet). */
+  .hg-job-card.hg-static-card { cursor: default; }
+  .hg-job-card.hg-static-card:hover {
+    transform: none;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border-color: var(--border);
+  }
+  .hg-inv-badge {
+    display: inline-block; margin-left: 4px; padding: 2px 8px;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
+    border-radius: 10px; text-transform: uppercase; vertical-align: middle;
+  }
+  .hg-inv-badge.low    { background: #fef3c7; color: #92400e; }
+  .hg-inv-badge.out    { background: #fee2e2; color: #991b1b; }
+  .hg-inv-badge.offcut { background: #e0e7ff; color: #3730a3; }
+  .hg-inv-bal-strong { font-weight: 700; font-size: 14px; }
+  .hg-inv-bal-strong.low { color: #d97706; }
+  .hg-inv-bal-strong.out { color: #A32D2D; }
   .hg-job-name { font-weight: 600; font-size: 15px; color: var(--text); line-height: 1.3; word-break: break-word; }
   .hg-job-client {
     font-size: 11px; color: var(--brand); text-transform: uppercase;
@@ -1511,15 +1532,27 @@
     </div>
     <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
   </div>
-  <!-- Inventory list — full table of every synced inventory item. -->
+  <!-- Inventory — card grid matching the Jobs tab visual system. -->
   <div id="hg-inventory-pane" class="hg-data-pane" style="display:none;">
     <div class="hg-data-head">
       <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
         &#128230; Inventory <span id="hg-inventory-count" class="hg-count-pill">0</span>
       </div>
-      <input id="hg-inventory-search" class="hg-search" placeholder="Search paper, brand, size&hellip;" oninput="hgRenderInventoryList()">
     </div>
-    <div class="hg-data-scroll"><table id="hg-inventory-table" class="hg-data-table"></table></div>
+    <div class="hg-filters">
+      <input id="hg-inventory-search" class="hg-search" placeholder="Search paper, brand, size, supplier&hellip;" oninput="hgRenderInventoryList()">
+      <select id="hg-inv-type"  class="hg-select" onchange="hgRenderInventoryList()"><option value="">All paper types</option></select>
+      <select id="hg-inv-brand" class="hg-select" onchange="hgRenderInventoryList()"><option value="">All brands</option></select>
+      <select id="hg-inv-stock" class="hg-select" onchange="hgRenderInventoryList()">
+        <option value="">All stock</option>
+        <option value="in">In stock</option>
+        <option value="low">Low stock</option>
+        <option value="out">Out of stock</option>
+        <option value="offcut">Offcuts only</option>
+        <option value="fresh">Fresh (no offcuts)</option>
+      </select>
+    </div>
+    <div id="hg-inventory-grid" class="hg-jobs-grid"></div>
   </div>
   <div id="hg-inbox-pane" class="hg-card" style="display:none;">
     <div class="hg-title">&#9993;&#65039; Inbox</div>
@@ -12295,50 +12328,102 @@ async function hgSaveJobEdit(id) {
   }
 }
 
-// Same shape for inventory items.
+// Inventory card grid — parallel to hgRenderJobsList. Fetches once,
+// caches, live-filters against search + paper type + brand + stock
+// dropdowns. Each card shows: #ID · status badges, paper type, brand,
+// specs (size, gsm, balance highlighted, reorder), supplier, offcut
+// cut-from line when applicable. Reuses .hg-job-card / .hg-jobs-grid
+// so the mobile / tablet / desktop responsive rules apply for free.
 async function hgRenderInventoryList() {
-  const table = document.getElementById('hg-inventory-table');
-  const count = document.getElementById('hg-inventory-count');
-  if (!table) return;
+  const grid    = document.getElementById('hg-inventory-grid');
+  const count   = document.getElementById('hg-inventory-count');
+  const typeSel = document.getElementById('hg-inv-type');
+  const brandSel= document.getElementById('hg-inv-brand');
+  const stockSel= document.getElementById('hg-inv-stock');
+  if (!grid) return;
   if (!__hgInvCache) {
-    table.innerHTML = '<tr><td class="hg-data-empty">Loading inventory&hellip;</td></tr>';
+    grid.innerHTML = '<div class="hg-data-empty">Loading inventory&hellip;</div>';
     try {
       const res = await fetch('/api/inventory');
       __hgInvCache = await res.json();
     } catch (e) {
-      table.innerHTML = `<tr><td class="hg-data-empty">Error: ${_hgEsc(e.message)}</td></tr>`;
+      grid.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
       return;
     }
+    // Populate paper-type + brand dropdowns from unique values.
+    const uniq = (key) => {
+      const seen = new Set(), out = [];
+      for (const it of __hgInvCache) {
+        const v = (it[key] || '').trim();
+        if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v); }
+      }
+      return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    };
+    const fillSelect = (sel, values) => {
+      if (!sel) return;
+      const keep = sel.value;
+      const first = sel.options[0].outerHTML;
+      sel.innerHTML = first + values.map(v => `<option value="${_hgEsc(v)}">${_hgEsc(v)}</option>`).join('');
+      sel.value = keep;
+    };
+    fillSelect(typeSel,  uniq('paper_type'));
+    fillSelect(brandSel, uniq('brand'));
   }
-  const q = ((document.getElementById('hg-inventory-search') || {}).value || '').trim().toLowerCase();
-  const rows = q ? __hgInvCache.filter(i => {
-    const hay = `${i.paper_type||''} ${i.brand||''} ${i.size||''} ${i.gsm||''} ${i.supplier||''}`.toLowerCase();
-    return hay.includes(q);
-  }) : __hgInvCache;
-  if (count) count.textContent = q ? `${rows.length} of ${__hgInvCache.length}` : `${__hgInvCache.length}`;
+  const q     = ((document.getElementById('hg-inventory-search') || {}).value || '').trim().toLowerCase();
+  const type  = ((typeSel  || {}).value || '').trim().toLowerCase();
+  const brand = ((brandSel || {}).value || '').trim().toLowerCase();
+  const stock = ((stockSel || {}).value || '').trim();
+  const rows = __hgInvCache.filter(i => {
+    if (type  && (i.paper_type || '').trim().toLowerCase() !== type)  return false;
+    if (brand && (i.brand      || '').trim().toLowerCase() !== brand) return false;
+    if (stock) {
+      const bal = Number(i.current_balance) || 0;
+      const th  = Number(i.reorder_threshold) || 0;
+      if (stock === 'out'    && bal >  0)             return false;
+      if (stock === 'in'     && bal <= 0)             return false;
+      if (stock === 'low'    && !(bal > 0 && th > 0 && bal <= th)) return false;
+      if (stock === 'offcut' && !i.is_offcut)         return false;
+      if (stock === 'fresh'  &&  i.is_offcut)         return false;
+    }
+    if (q) {
+      const hay = `${i.paper_type||''} ${i.brand||''} ${i.size||''} ${i.gsm||''} ${i.supplier||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  if (count) count.textContent = (q || type || brand || stock) ? `${rows.length} of ${__hgInvCache.length}` : `${__hgInvCache.length}`;
   if (!rows.length) {
-    table.innerHTML = '<tr><td class="hg-data-empty">' + (__hgInvCache.length ? 'No matches.' : 'No inventory synced yet. Click <b>Sync from Tracker</b> above.') + '</td></tr>';
+    grid.innerHTML = '<div class="hg-data-empty">' + (__hgInvCache.length ? 'No matches.' : 'No inventory synced yet. Click <b>Sync from Tracker</b> above.') + '</div>';
     return;
   }
-  const head = `
-    <thead><tr>
-      <th>ID</th><th>Paper Type</th><th>Brand</th><th>Size</th>
-      <th>GSM</th><th class="num">Balance</th><th class="num">Reorder</th>
-      <th>Offcut?</th><th>Supplier</th>
-    </tr></thead>`;
-  const body = rows.map(i => `
-    <tr>
-      <td class="num">${_hgEsc(i.id)}</td>
-      <td>${_hgEsc(i.paper_type)}</td>
-      <td>${_hgEsc(i.brand)}</td>
-      <td>${_hgEsc(i.size)}</td>
-      <td>${_hgEsc(i.gsm)}</td>
-      <td class="num">${_hgEsc(i.current_balance)}</td>
-      <td class="num">${_hgEsc(i.reorder_threshold)}</td>
-      <td>${i.is_offcut ? 'Yes' : ''}</td>
-      <td>${_hgEsc(i.supplier)}</td>
-    </tr>`).join('');
-  table.innerHTML = head + '<tbody>' + body + '</tbody>';
+  const fmt = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString() : (n || ''));
+  grid.innerHTML = rows.map(i => {
+    const bal = Number(i.current_balance) || 0;
+    const th  = Number(i.reorder_threshold) || 0;
+    let statusBadge = '';
+    let balClass    = '';
+    if (bal <= 0)                          { statusBadge = '<span class="hg-inv-badge out">Out</span>'; balClass = 'out'; }
+    else if (th > 0 && bal <= th)          { statusBadge = '<span class="hg-inv-badge low">Low</span>'; balClass = 'low'; }
+    const offcutBadge = i.is_offcut ? '<span class="hg-inv-badge offcut">Offcut</span>' : '';
+    return `
+      <div class="hg-job-card hg-static-card">
+        <div class="hg-job-head">
+          <span class="hg-job-id">#${_hgEsc(i.id)}</span>
+          <span>${statusBadge}${offcutBadge}</span>
+        </div>
+        <div class="hg-job-name">${_hgEsc(i.paper_type) || '&mdash;'}</div>
+        <div class="hg-job-client">${_hgEsc(i.brand) || ''}</div>
+        <div class="hg-job-specs">
+          <div class="hg-spec"><span class="hg-spec-key">Size</span><span class="hg-spec-val">${_hgEsc(i.size) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">GSM</span><span class="hg-spec-val">${_hgEsc(i.gsm) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Balance</span><span class="hg-spec-val hg-inv-bal-strong ${balClass}">${fmt(bal)}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Reorder</span><span class="hg-spec-val">${th > 0 ? fmt(th) : '&mdash;'}</span></div>
+          ${i.supplier ? `<div class="hg-spec wide"><span class="hg-spec-key">Supplier</span><span class="hg-spec-val">${_hgEsc(i.supplier)}</span></div>` : ''}
+          ${i.is_offcut && i.cut_from_size ? `<div class="hg-spec wide"><span class="hg-spec-key">Cut From</span><span class="hg-spec-val">${_hgEsc(i.cut_from_size)}</span></div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // Sync tracker jobs + inventory into Hamza Guide's own DB. Full sync
