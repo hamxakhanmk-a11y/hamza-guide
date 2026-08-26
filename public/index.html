@@ -1427,9 +1427,9 @@
   .hg-job-card {
     background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 14px 16px; transition: box-shadow 0.15s ease, transform 0.15s ease;
-    display: flex; flex-direction: column; min-width: 0;
+    display: flex; flex-direction: column; min-width: 0; cursor: pointer;
   }
-  .hg-job-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); }
+  .hg-job-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); border-color: var(--brand-soft); }
   .hg-job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
   .hg-job-id  { color: var(--brand); font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
   .hg-job-mrp {
@@ -1474,7 +1474,7 @@
     <div class="hg-sync-row">
       <button id="hg-sync-btn" onclick="hgSyncTracker()">&#128260; Sync from Tracker</button>
       <span id="hg-sync-status" style="font-size:12px; color:var(--text2);">
-        Pulls every job and inventory item &mdash; new rows AND edits to existing ones.
+        Pulls delivered jobs + inventory into your archive. Once here, they stay put &mdash; your edits are safe from future syncs.
       </span>
     </div>
   </div>
@@ -12198,7 +12198,7 @@ async function hgRenderJobsList() {
     const paper    = j.paper || j.size || '';
     const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
     return `
-      <div class="hg-job-card">
+      <div class="hg-job-card" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
         <div class="hg-job-head">
           <span class="hg-job-id">#${_hgEsc(j.id)}</span>
           ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
@@ -12217,6 +12217,62 @@ async function hgRenderJobsList() {
       </div>
     `;
   }).join('');
+}
+
+// Card click → open the tracker's own job card modal (openEdit is
+// still in the tracker JS we copied). Then swap the modal's Save
+// Changes button to fire our own save handler, which writes only to
+// Hamza Guide's tracker_jobs mirror — never the tracker's DB.
+function hgOpenJobEdit(id) {
+  // Keep the in-memory `jobs` global (used by openEdit) in sync with
+  // the cache we display. openEdit reads `jobs.find(x=>x.id===id)`.
+  if (Array.isArray(__hgJobsCache) && typeof jobs !== 'undefined') {
+    try { jobs = __hgJobsCache; } catch (_) {}
+  }
+  if (typeof openEdit !== 'function') {
+    alert('Edit modal is unavailable — reload the page and try again.');
+    return;
+  }
+  try {
+    openEdit(id);
+  } catch (e) {
+    console.warn('openEdit threw:', e);
+    alert('Could not open the edit modal: ' + (e && e.message || e));
+    return;
+  }
+  // Re-wire the Save Changes button. openEdit inserts onclick="saveEdit(id)"
+  // which triggers the tracker's stock-adjustment logic — we bypass that.
+  setTimeout(() => {
+    const btns = document.querySelectorAll('.modal-actions button');
+    for (const b of btns) {
+      const oc = b.getAttribute('onclick') || '';
+      if (oc.includes('saveEdit(')) {
+        b.setAttribute('onclick', `hgSaveJobEdit(${id})`);
+        b.textContent = 'Save (local only)';
+      }
+    }
+  }, 30);
+}
+
+// Save the form values to Hamza Guide's mirror. Never touches the
+// tracker's DB. Refreshes the Jobs pane so changes appear right away.
+async function hgSaveJobEdit(id) {
+  let data;
+  try { data = getFormData(); }
+  catch (e) { alert('Form read error: ' + (e && e.message || e)); return; }
+  if (!data.name || !data.client) { alert('Name and company are required.'); return; }
+  try {
+    const updated = await api('PUT', `/api/jobs/${id}`, data);
+    if (typeof closeModal === 'function') closeModal();
+    if (typeof notify     === 'function') notify('Saved locally · tracker not touched');
+    // Update in-place in cache so re-render is instant.
+    if (Array.isArray(__hgJobsCache)) {
+      __hgJobsCache = __hgJobsCache.map(j => j.id === id ? { ...j, ...updated } : j);
+    }
+    hgRenderJobsList();
+  } catch (e) {
+    alert('Save failed: ' + (e && e.message || e));
+  }
 }
 
 // Same shape for inventory items.
@@ -12282,32 +12338,26 @@ async function hgSyncTracker() {
     const res = await fetch('/api/sync-tracker', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
-    // Build a status line that answers "did I pick up everything?"
-    // Reads: tracker → archive (mirror) and flags completeness.
-    const check = data.complete ? '✅' : '⚠️';
+    // Freeze-once-pulled: report what was newly added this run and
+    // how big the archive is now. data.jobs / data.inventory = rows
+    // the tracker had matching criteria this run (delivered + all
+    // inventory); data.jobs_new / data.inventory_new = rows actually
+    // written (existing rows are left alone).
     const parts = [];
-    if (data.tracker_jobs != null) {
-      parts.push(`jobs ${data.archive_jobs ?? '?'} / ${data.tracker_jobs} in tracker`);
-    } else if (data.archive_jobs != null) {
-      parts.push(`${data.archive_jobs} jobs archived`);
+    if (data.jobs_new     != null) parts.push(`+${data.jobs_new} new job${data.jobs_new === 1 ? '' : 's'}`);
+    if (data.inventory_new!= null) parts.push(`+${data.inventory_new} inventory`);
+    if (data.archive_jobs != null || data.archive_inventory != null) {
+      parts.push(`archive: ${data.archive_jobs ?? 0} jobs · ${data.archive_inventory ?? 0} inventory`);
     }
-    if (data.tracker_inventory != null) {
-      parts.push(`inventory ${data.archive_inventory ?? '?'} / ${data.tracker_inventory} in tracker`);
-    } else if (data.archive_inventory != null) {
-      parts.push(`${data.archive_inventory} inventory archived`);
-    }
-    const detail = parts.length ? ' — ' + parts.join(', ') : '';
-    const label  = data.complete ? 'All data captured' : 'Sync ran with a gap';
-    // If a source table errored, surface why so we don't have to guess.
+    const detail = parts.length ? ' — ' + parts.join(' · ') : '';
     const errs = [];
     if (data.jobs_error)      errs.push('jobs: ' + data.jobs_error);
     if (data.inventory_error) errs.push('inventory: ' + data.inventory_error);
     const errText = errs.length ? ' · ' + errs.join(' | ') : '';
-    // With full-sync, data.jobs / data.inventory = rows scanned (which
-    // equals the tracker's live totals). Show the tracker/archive
-    // comparison from parts[] rather than duplicating a "new" count.
+    const check = errs.length ? '⚠️' : '✅';
+    const label = errs.length ? 'Sync ran with an error' : 'Synced';
     status.textContent = `${check} ${label}${detail} · ${new Date().toLocaleTimeString()}${errText}`;
-    status.style.color = data.complete ? '#166534' : '#A32D2D';
+    status.style.color = errs.length ? '#A32D2D' : '#166534';
     setTimeout(() => { status.style.color = 'var(--text2)'; }, 12000);
     // Bust the local caches so the tables re-fetch on next render, then
     // re-render whichever data tab is currently open.

@@ -871,16 +871,19 @@ async function syncTrackerHandler(req, res) {
   const result  = { ok: true, mode: 'upsert (no deletions — safe archive)', synced_at: new Date().toISOString() };
   try {
     await dbReady;
-    // Full sync every time — catches both new rows AND updates to
-    // existing rows (a job's stage, delivered qty, particulars, etc.).
-    // Upsert semantics: nothing is ever deleted from the mirror; rows
-    // that still exist in tracker overwrite our stale copy, rows that
-    // vanished from tracker stay preserved on our side.
+    // Freeze-once-pulled sync:
+    // - Jobs: only pull rows the tracker marks Delivered (stage_index = 7).
+    // - Both tables: INSERT ... ON CONFLICT DO NOTHING. Once a row lands
+    //   in our mirror, no subsequent sync ever overwrites it. Tracker can
+    //   edit or delete that job later — Hamza Guide's copy stays put.
+    // - Edits made inside Hamza Guide (PUT /api/jobs/:id) update the
+    //   mirror directly and are safe from being clobbered by future syncs.
     //
-    // Speed: batch INSERTs via sql.transaction() so N rows = ceil(N/CHUNK)
-    // HTTP round-trips to Neon, not N. 300 rows in ~6 requests.
+    // Speed: batch INSERTs via sql.transaction() → ceil(N/CHUNK) HTTP
+    // round-trips instead of N.
     const CHUNK = 50;
-    async function upsertBatch(rows, table) {
+    async function insertOnlyBatch(rows, table) {
+      let added = 0;
       for (let i = 0; i < rows.length; i += CHUNK) {
         const batch = rows.slice(i, i + CHUNK);
         const stmts = batch.map(r => {
@@ -888,33 +891,38 @@ async function syncTrackerHandler(req, res) {
             return local`
               INSERT INTO tracker_jobs (id, data, synced_at)
               VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+              ON CONFLICT (id) DO NOTHING
+              RETURNING id
             `;
           }
           return local`
             INSERT INTO tracker_inventory_items (id, data, synced_at)
             VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-            ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+            ON CONFLICT (id) DO NOTHING
+            RETURNING id
           `;
         });
-        await local.transaction(stmts);
+        const results = await local.transaction(stmts);
+        for (const r of results) added += (r?.length || 0);
       }
+      return added;
     }
-    // Jobs
+    // Jobs — delivered only (stage_index = 7, the "Delivered" stage
+    // per STAGES[] above).
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      const rows = await tracker`SELECT * FROM jobs ORDER BY id`;
-      await upsertBatch(rows, 'tracker_jobs');
-      result.jobs = rows.length;
+      const rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 ORDER BY id`;
+      result.jobs_new  = await insertOnlyBatch(rows, 'tracker_jobs');
+      result.jobs      = rows.length;
     } catch (e) { result.jobs_error = e.message; }
-    // Inventory items
+    // Inventory items — same freeze rule (once here, stay put).
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
       const rows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
-      await upsertBatch(rows, 'tracker_inventory_items');
-      result.inventory = rows.length;
+      result.inventory_new = await insertOnlyBatch(rows, 'tracker_inventory_items');
+      result.inventory     = rows.length;
     } catch (e) { result.inventory_error = e.message; }
-    result.mode = 'full sync (upsert — new rows + updates)';
+    result.mode = 'freeze (delivered jobs only, insert-if-new)';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
@@ -938,6 +946,39 @@ async function syncTrackerHandler(req, res) {
 }
 app.post('/api/sync-tracker', syncTrackerHandler);
 app.get('/api/sync-tracker',  syncTrackerHandler);
+
+// PUT /api/jobs/:id — Hamza Guide's local edit endpoint. Writes ONLY
+// to our own tracker_jobs mirror; the tracker's real jobs table is
+// never touched. Registered before the tracker's PUT (line ~1036) so
+// Express hits this one first.
+// Merges the submitted form fields on top of the existing mirror
+// row's data JSONB, preserving tracker-only fields (stage_index,
+// stages, log, created_at, etc.) if the form doesn't include them.
+app.put('/api/jobs/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    await dbReady;
+    const sql = getDb();
+    const [existing] = await sql`SELECT data FROM tracker_jobs WHERE id = ${id}`;
+    if (!existing) return res.status(404).json({ error: 'Job not in Hamza Guide mirror — sync it first' });
+    const b = req.body || {};
+    const merged = { ...existing.data };
+    for (const [k, v] of Object.entries(b)) {
+      if (v !== undefined) merged[k] = v;
+    }
+    merged.id = id;
+    await sql`
+      UPDATE tracker_jobs
+      SET data = ${JSON.stringify(merged)}::jsonb, synced_at = NOW()
+      WHERE id = ${id}
+    `;
+    res.json(merged);
+  } catch (err) {
+    console.error('PUT /api/jobs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Helper: parse the sheets-qty form field into an integer. Returns 0 on garbage.
 function parseSheets(v) {
