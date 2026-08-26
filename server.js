@@ -930,7 +930,23 @@ async function syncTrackerHandler(req, res) {
       result.inventory_refreshed = await inventoryUpsertBatch(rows);
       result.inventory           = rows.length;
     } catch (e) { result.inventory_error = e.message; }
-    result.mode = 'jobs frozen, inventory refreshed';
+    // Inventory transactions — same upsert rule, feeds the Total In /
+    // Total Out / Manual Consumption reports on the Inventory tab.
+    try {
+      await local`CREATE TABLE IF NOT EXISTS tracker_inventory_transactions (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      const rows = await tracker`SELECT * FROM inventory_transactions ORDER BY id`;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const batch = rows.slice(i, i + CHUNK);
+        const stmts = batch.map(r => local`
+          INSERT INTO tracker_inventory_transactions (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+        `);
+        await local.transaction(stmts);
+      }
+      result.transactions_refreshed = rows.length;
+    } catch (e) { result.transactions_error = e.message; }
+    result.mode = 'jobs frozen; inventory + transactions refreshed';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
@@ -1759,31 +1775,48 @@ app.get('/api/inventory/transactions', async (req, res) => {
     const sql = getDb();
     const from = req.query.from || null;
     const to   = req.query.to   || null;
-    const dir = req.query.direction === 'in' ? 'in'
+    const dir  = req.query.direction === 'in'  ? 'in'
               : req.query.direction === 'out' ? 'out'
               : 'all';
-    // Inclusive end-of-day on `to` so a date like 2026-05-31 matches transactions
-    // recorded at 2026-05-31 18:00:00. Without this, same-day queries miss data.
-    // reason='correction' is an admin-only balance edit (data fix). It
-    // shows in the per-item History modal but is intentionally excluded
-    // from movement reports so Stock In / Stock Out / Dashboard totals
-    // reflect actual material flow only.
-    const txs = await sql`
-      SELECT t.*, j.name AS job_name, j.jobcode AS job_code,
-             i.paper_type, i.size AS item_size, i.gsm AS item_gsm,
-             i.brand AS item_brand, i.unit AS item_unit
-      FROM inventory_transactions t
-      LEFT JOIN jobs j ON j.id = t.job_id
-      LEFT JOIN inventory_items i ON i.id = t.item_id
-      WHERE (${from}::timestamptz IS NULL OR t.created_at >= ${from}::timestamptz)
-        AND (${to}::timestamptz   IS NULL OR t.created_at <  (${to}::timestamptz + INTERVAL '1 day'))
-        AND t.reason != 'correction'
-        AND (${dir} = 'all'
-             OR (${dir} = 'in'  AND t.change > 0)
-             OR (${dir} = 'out' AND t.change < 0))
-      ORDER BY t.id DESC
-    `;
-    res.json(txs);
+    const challan = (req.query.challan || '').trim();
+    // Read from the mirror trio (transactions + jobs + inventory items),
+    // do the join and filtering in JS. Same output shape as the tracker's
+    // native endpoint (t.* plus joined job_name / job_code / paper_type /
+    // item_size / item_gsm / item_brand / item_unit).
+    let txMirror, jobMirror, invMirror;
+    try { txMirror  = await sql`SELECT data FROM tracker_inventory_transactions`; } catch (_) { txMirror  = []; }
+    try { jobMirror = await sql`SELECT data FROM tracker_jobs`;                  } catch (_) { jobMirror = []; }
+    try { invMirror = await sql`SELECT data FROM tracker_inventory_items`;       } catch (_) { invMirror = []; }
+    const jobById = new Map(jobMirror.map(r => [r.data.id, r.data]));
+    const invById = new Map(invMirror.map(r => [r.data.id, r.data]));
+    // Bound date filters
+    const fromMs = from ? Date.parse(from) : null;
+    const toMs   = to   ? (Date.parse(to) + 86400 * 1000) : null; // inclusive end-of-day
+    const out = [];
+    for (const r of txMirror) {
+      const t = r.data || {};
+      if (t.reason === 'correction') continue;
+      if (dir === 'in'  && !(Number(t.change) > 0)) continue;
+      if (dir === 'out' && !(Number(t.change) < 0)) continue;
+      const ts = t.created_at ? Date.parse(t.created_at) : null;
+      if (fromMs && (!ts || ts <  fromMs)) continue;
+      if (toMs   && (!ts || ts >= toMs))   continue;
+      if (challan && String(t.challan_no || '').toLowerCase() !== challan.toLowerCase()) continue;
+      const job = t.job_id  ? jobById.get(t.job_id)  : null;
+      const inv = t.item_id ? invById.get(t.item_id) : null;
+      out.push({
+        ...t,
+        job_name:   job ? job.name    : null,
+        job_code:   job ? job.jobcode : null,
+        paper_type: inv ? inv.paper_type : null,
+        item_size:  inv ? inv.size       : null,
+        item_gsm:   inv ? inv.gsm        : null,
+        item_brand: inv ? inv.brand      : null,
+        item_unit:  inv ? inv.unit       : null,
+      });
+    }
+    out.sort((a, b) => (b.id || 0) - (a.id || 0));
+    res.json(out);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
