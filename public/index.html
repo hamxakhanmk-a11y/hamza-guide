@@ -1626,6 +1626,21 @@
           <option value="leaflet">Leaflet</option>
           <option value="label">Label</option>
         </select>
+        <select id="hg-jobs-period" class="hg-select" onchange="hgJobsPeriodChange()">
+          <option value="">All time</option>
+          <option value="today">Today</option>
+          <option value="week">This week</option>
+          <option value="month">This month</option>
+          <option value="last-month">Last month</option>
+          <option value="year">This year</option>
+          <option value="last-year">Last year</option>
+          <option value="custom">Custom range&hellip;</option>
+        </select>
+        <span id="hg-jobs-custom" style="display:none;gap:6px;align-items:center;">
+          <input type="date" id="hg-jobs-from" class="hg-select" onchange="hgRenderJobsList()" style="min-width:0;">
+          <span style="color:var(--text2);font-size:12px;">to</span>
+          <input type="date" id="hg-jobs-to"   class="hg-select" onchange="hgRenderJobsList()" style="min-width:0;">
+        </span>
       </div>
       <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
     </div>
@@ -12268,6 +12283,44 @@ function _hgEsc(v) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// Resolve a period preset to {from, to} ISO date strings (YYYY-MM-DD).
+// Both bounds are inclusive on the low end, exclusive on the high end
+// so range comparisons stay clean: `date >= from && date < to`.
+function _hgPeriodRange(period, customFrom, customTo) {
+  if (!period) return { from: null, to: null };
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const iso = (dt) => {
+    const yy = dt.getFullYear(); const mm = String(dt.getMonth() + 1).padStart(2, '0'); const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+  if (period === 'today')      return { from: iso(new Date(y, m, d)),     to: iso(new Date(y, m, d + 1)) };
+  if (period === 'week') {
+    const day = now.getDay(); // 0 = Sunday
+    const start = new Date(y, m, d - day);
+    return { from: iso(start), to: iso(new Date(y, m, d - day + 7)) };
+  }
+  if (period === 'month')      return { from: iso(new Date(y, m, 1)),     to: iso(new Date(y, m + 1, 1)) };
+  if (period === 'last-month') return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 1)) };
+  if (period === 'year')       return { from: iso(new Date(y, 0, 1)),     to: iso(new Date(y + 1, 0, 1)) };
+  if (period === 'last-year')  return { from: iso(new Date(y - 1, 0, 1)), to: iso(new Date(y, 0, 1)) };
+  if (period === 'custom')     return {
+    from: (customFrom || '').slice(0, 10) || null,
+    // Custom picker is inclusive on both ends, so push `to` forward one
+    // day so date === to still counts.
+    to:   customTo   ? iso(new Date(customTo + 'T00:00:00').valueOf() + 86400000) : null,
+  };
+  return { from: null, to: null };
+}
+
+// Extract a job's effective date as YYYY-MM-DD for range comparison.
+// dateissued is the intent; created_at is the fallback for older rows.
+function _hgJobDate(j) {
+  if (j.dateissued) return String(j.dateissued).slice(0, 10);
+  if (j.created_at) return String(j.created_at).slice(0, 10);
+  return '';
+}
+
 // Best-guess product type from a job name. The tracker doesn't store
 // a type field — this scans the job name for the standard packaging
 // keywords (\btab\b, \bcaps?\b, syrup/susp, leaflet, label). Longer /
@@ -12317,12 +12370,22 @@ async function hgRenderJobsList() {
       compSel.value = keep;
     }
   }
-  const q     = ((document.getElementById('hg-jobs-search') || {}).value || '').trim().toLowerCase();
-  const comp  = ((compSel || {}).value || '').trim().toLowerCase();
-  const type  = ((document.getElementById('hg-jobs-type') || {}).value || '').trim().toLowerCase();
+  const q       = ((document.getElementById('hg-jobs-search') || {}).value || '').trim().toLowerCase();
+  const comp    = ((compSel || {}).value || '').trim().toLowerCase();
+  const type    = ((document.getElementById('hg-jobs-type')   || {}).value || '').trim().toLowerCase();
+  const period  = ((document.getElementById('hg-jobs-period') || {}).value || '');
+  const fromEl  = document.getElementById('hg-jobs-from');
+  const toEl    = document.getElementById('hg-jobs-to');
+  const { from: dateFrom, to: dateTo } = _hgPeriodRange(period, fromEl?.value, toEl?.value);
   const rows  = __hgJobsCache.filter(j => {
     if (comp && (j.client || '').trim().toLowerCase() !== comp) return false;
     if (type && _hgJobType(j) !== type) return false;
+    if (dateFrom || dateTo) {
+      const dt = _hgJobDate(j);
+      if (!dt) return false;              // undated jobs get filtered out when a date range is active
+      if (dateFrom && dt <  dateFrom) return false;
+      if (dateTo   && dt >= dateTo)   return false;
+    }
     if (q) {
       const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''} ${j.mrp||''}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -13066,6 +13129,15 @@ function printManualConsumption() {
   });
 }
 // ── end ported reports block ──
+// Toggle the custom-range inputs when the Jobs period dropdown moves
+// to / from "Custom". Any change also triggers a re-render.
+function hgJobsPeriodChange() {
+  const sel = document.getElementById('hg-jobs-period');
+  const custom = document.getElementById('hg-jobs-custom');
+  if (custom) custom.style.display = (sel && sel.value === 'custom') ? 'inline-flex' : 'none';
+  hgRenderJobsList();
+}
+
 // Jobs sub-tab switcher — All jobs vs Sales rollup.
 function hgJobsSubTab(name) {
   document.querySelectorAll('#hg-jobs-subtabs .hg-subtab').forEach(b => {
@@ -13103,9 +13175,13 @@ async function hgRenderSales() {
   };
   const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-  // Preserve filter selections across re-renders.
+  // Preserve filter selections across re-renders (the whole pane is
+  // re-templated on every call).
   const prevCompany = (document.getElementById('hg-sales-company') || {}).value || '';
   const prevType    = (document.getElementById('hg-sales-type')    || {}).value || '';
+  const prevPeriod  = (document.getElementById('hg-sales-period')  || {}).value || '';
+  const prevFrom    = (document.getElementById('hg-sales-from')    || {}).value || '';
+  const prevTo      = (document.getElementById('hg-sales-to')      || {}).value || '';
   const companyList = [...new Set(__hgJobsCache.map(j => (j.client || '').trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   const compSelHtml = `
@@ -13120,12 +13196,39 @@ async function hgRenderSales() {
         `<option value="${t}"${t === prevType ? ' selected' : ''}>${cap(t)}</option>`
       ).join('')}
     </select>`;
+  const periodOpts = [
+    ['',           'All time'],
+    ['today',      'Today'],
+    ['week',       'This week'],
+    ['month',      'This month'],
+    ['last-month', 'Last month'],
+    ['year',       'This year'],
+    ['last-year',  'Last year'],
+    ['custom',     'Custom range…'],
+  ];
+  const periodSelHtml = `
+    <select id="hg-sales-period" class="hg-select" onchange="hgRenderSales()">
+      ${periodOpts.map(([v, l]) => `<option value="${v}"${v === prevPeriod ? ' selected' : ''}>${l}</option>`).join('')}
+    </select>`;
+  const customHtml = prevPeriod === 'custom' ? `
+    <span style="display:inline-flex;gap:6px;align-items:center;">
+      <input type="date" id="hg-sales-from" class="hg-select" value="${_hgEsc(prevFrom)}" onchange="hgRenderSales()" style="min-width:0;">
+      <span style="color:var(--text2);font-size:12px;">to</span>
+      <input type="date" id="hg-sales-to"   class="hg-select" value="${_hgEsc(prevTo)}"   onchange="hgRenderSales()" style="min-width:0;">
+    </span>` : '';
   // Apply filters
   const compFilter = prevCompany.trim().toLowerCase();
   const typeFilter = prevType.trim().toLowerCase();
+  const { from: dateFrom, to: dateTo } = _hgPeriodRange(prevPeriod, prevFrom, prevTo);
   const filtered = __hgJobsCache.filter(j => {
     if (compFilter && (j.client || '').trim().toLowerCase() !== compFilter) return false;
     if (typeFilter && _hgJobType(j) !== typeFilter) return false;
+    if (dateFrom || dateTo) {
+      const dt = _hgJobDate(j);
+      if (!dt) return false;
+      if (dateFrom && dt <  dateFrom) return false;
+      if (dateTo   && dt >= dateTo)   return false;
+    }
     return true;
   });
   // Compute rollup
@@ -13150,15 +13253,23 @@ async function hgRenderSales() {
   const companyRows = [...byCompany.entries()].sort((a, b) => b[1] - a[1]);
   const typeRows    = [...byType.entries()   ].sort((a, b) => b[1] - a[1]);
   perJob.sort((a, b) => b.sale - a.sale);
+  const periodLabelMap = Object.fromEntries(periodOpts);
+  const periodNote = prevPeriod ? (prevPeriod === 'custom'
+      ? (prevFrom || prevTo ? `${prevFrom || '…'} to ${prevTo || '…'}` : 'Custom range')
+      : periodLabelMap[prevPeriod])
+    : '';
   const filterNote = [
     compFilter ? `Company: ${_hgEsc(prevCompany)}` : '',
     typeFilter ? `Type: ${_hgEsc(cap(prevType))}` : '',
+    periodNote ? `Period: ${_hgEsc(periodNote)}` : '',
   ].filter(Boolean).join(' &middot; ');
   pane.innerHTML = `
     <div class="hg-filters" style="margin-bottom:14px;">
       ${compSelHtml}
       ${typeSelHtml}
-      ${(compFilter || typeFilter) ? `
+      ${periodSelHtml}
+      ${customHtml}
+      ${(compFilter || typeFilter || prevPeriod) ? `
         <button class="btn btn-sm" onclick="hgClearSalesFilters()">Clear filters</button>` : ''}
     </div>
     <div class="hg-sales-hero">
@@ -13217,8 +13328,14 @@ async function hgRenderSales() {
 function hgClearSalesFilters() {
   const c = document.getElementById('hg-sales-company');
   const t = document.getElementById('hg-sales-type');
+  const p = document.getElementById('hg-sales-period');
+  const f = document.getElementById('hg-sales-from');
+  const to = document.getElementById('hg-sales-to');
   if (c) c.value = '';
   if (t) t.value = '';
+  if (p) p.value = '';
+  if (f) f.value = '';
+  if (to) to.value = '';
   hgRenderSales();
 }
 
