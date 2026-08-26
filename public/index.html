@@ -1642,6 +1642,13 @@
     font-size: 12px; font-weight: 700;
   }
   #hg-selbar .btn-delete:hover { background: #b91c1c; }
+  /* "Select all visible" toggle in the Jobs data-head. */
+  .hg-selectall {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-size: 12px; color: var(--text2); user-select: none;
+  }
+  .hg-selectall input { width: 15px; height: 15px; accent-color: var(--brand); cursor: pointer; }
+  .hg-selectall:hover { color: var(--brand); }
   /* Sales-table row select cell */
   .hg-sales-table td.selcell, .hg-sales-table th.selcell { width: 32px; text-align: center; padding-left: 8px; padding-right: 4px; }
   .hg-sales-table td.selcell input { accent-color: var(--brand); width: 15px; height: 15px; cursor: pointer; }
@@ -1708,6 +1715,11 @@
       <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
         &#128209; Jobs <span id="hg-jobs-count" class="hg-count-pill">0</span>
       </div>
+      <label class="hg-selectall">
+        <input type="checkbox" id="hg-jobs-select-all"
+               onchange="hgToggleAllVisibleJobs(this.checked)">
+        Select all visible
+      </label>
     </div>
     <div class="hg-subtabs" id="hg-jobs-subtabs">
       <button class="hg-subtab active" data-sub="all"   onclick="hgJobsSubTab('all')">&#128209; Jobs</button>
@@ -12602,6 +12614,7 @@ async function hgRenderJobsList() {
     const k = groupKey(j);
     groupCounts[k] = (groupCounts[k] || 0) + 1;
   }
+  __hgLastJobRows = rows;
   if (count) count.textContent = (q || comp || type) ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
   if (!rows.length) {
     grid.innerHTML = '<div class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</div>';
@@ -12650,6 +12663,8 @@ async function hgRenderJobsList() {
       </div>
     `;
   }).join('');
+  hgSyncJobsSelectAllCheckbox(rows);
+  hgUpdateSelBar();
 }
 
 // ── ported from tracker: Total In / Total Out / Manual Consumption reports ──
@@ -13572,6 +13587,27 @@ function hgToggleAllVisibleSales(checked) {
     if (checked) __hgSelectedJobs.add(r.id); else __hgSelectedJobs.delete(r.id);
   }
   hgRenderSales();
+}
+// Latest visible-jobs-card set — hgToggleAllVisibleJobs reads it so
+// "Select all visible" toggles exactly what the user is looking at.
+let __hgLastJobRows = null;
+function hgToggleAllVisibleJobs(checked) {
+  const rows = __hgLastJobRows || [];
+  for (const j of rows) {
+    if (checked) __hgSelectedJobs.add(j.id); else __hgSelectedJobs.delete(j.id);
+  }
+  hgRenderJobsList();
+}
+// Refresh the "Select all visible" checkbox's checked / indeterminate
+// state based on how many of the currently visible jobs sit in the
+// selection Set. Called at the end of every hgRenderJobsList().
+function hgSyncJobsSelectAllCheckbox(rows) {
+  const el = document.getElementById('hg-jobs-select-all');
+  if (!el) return;
+  if (!rows.length) { el.checked = false; el.indeterminate = false; return; }
+  const inSel = rows.filter(j => __hgSelectedJobs.has(j.id)).length;
+  el.checked       = inSel === rows.length;
+  el.indeterminate = inSel > 0 && inSel < rows.length;
 }
 
 function hgClearSalesFilters() {
