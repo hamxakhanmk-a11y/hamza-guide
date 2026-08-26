@@ -12268,6 +12268,37 @@ function _hgEsc(v) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// Canonicalize a job name so common spelling / abbreviation variants
+// collapse into the same string. This is what makes the MIL badge
+// recognize "tuff inj 1gm i.m u/c", "tuff inj 1gm i.m unit carton",
+// and "tuff inj 1gm i.m U/c" as the same group.
+//
+// Rules applied in order:
+//   1. Lowercase + trim.
+//   2. Common short-forms → canonical: u/c, u.c, unit carton, unit-cartons all → "uc".
+//      Also i.m → im, i.v → iv, p.s → ps, b.p → bp.
+//   3. Strip trailing "s" on packaging words: labels → label, cartons → carton,
+//      boxes → box (kept simple: just -s, not -es).
+//   4. Strip remaining punctuation, collapse whitespace.
+//
+// Safe: doesn't touch numbers, doesn't merge products with different
+// dosages, doesn't drop distinguishing words like "tuff" or "inj".
+function _hgNormName(s) {
+  return String(s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\bu[\.\/\\]c\b/g, 'uc')
+    .replace(/\bunit[\s\-]*cartons?\b/g, 'uc')
+    .replace(/\bi\.m\b/g, 'im')
+    .replace(/\bi\.v\b/g, 'iv')
+    .replace(/\bp\.s\b/g, 'ps')
+    .replace(/\bb\.p\b/g, 'bp')
+    .replace(/\b(label|carton|box|pouch|bottle|vial|sachet|strip|blister|leaflet|insert)s\b/g, '$1')
+    .replace(/[^\w\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Best-guess product type from a job name. The tracker doesn't store
 // a type field — this scans the job name for the standard packaging
 // keywords (\btab\b, \bcaps?\b, syrup/susp, leaflet, label). Longer /
@@ -12324,17 +12355,21 @@ async function hgRenderJobsList() {
     if (comp && (j.client || '').trim().toLowerCase() !== comp) return false;
     if (type && _hgJobType(j) !== type) return false;
     if (q) {
-      const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''} ${j.mrp||''}`.toLowerCase();
-      if (!hay.includes(q)) return false;
+      // Normalize both sides so search catches variant spellings —
+      // typing "unit carton" finds jobs typed as "u/c" and vice versa.
+      const qN  = _hgNormName(q);
+      const hay = `${_hgNormName(j.name||'')} ${(j.client||'').toLowerCase()} ${(j.jobcode||'').toLowerCase()} ${(j.paper||'').toLowerCase()} ${(j.machine||'').toLowerCase()} ${(j.ref||'').toLowerCase()} ${(j.mrp||'').toLowerCase()}`;
+      if (!hay.includes(qN)) return false;
     }
     return true;
   });
   // Detect mil-group membership: same client + same normalized product
   // name, counted across the FULL cache (not just filtered rows) so a
   // filtered-down view still shows the MIL pill on any sibling that
-  // exists in the archive.
+  // exists in the archive. Uses _hgNormName so name-spelling variants
+  // (u/c vs unit carton, label vs labels, etc.) group together.
   const _norm = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
-  const groupKey = j => `${_norm(j.client)}|${_norm(j.name)}`;
+  const groupKey = j => `${_norm(j.client)}|${_hgNormName(j.name)}`;
   const groupCounts = {};
   for (const j of __hgJobsCache) {
     const k = groupKey(j);
