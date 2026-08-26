@@ -971,6 +971,45 @@ async function syncTrackerHandler(req, res) {
 app.post('/api/sync-tracker', syncTrackerHandler);
 app.get('/api/sync-tracker',  syncTrackerHandler);
 
+// DELETE /api/jobs/:id — removes ONE job from Hamza Guide's own
+// tracker_jobs mirror. Does not touch the tracker database. Uses
+// this local endpoint (registered before the tracker's DELETE at
+// line ~1241 in server.js) so Express hits ours first.
+app.delete('/api/jobs/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    await dbReady;
+    const sql = getDb();
+    const rows = await sql`DELETE FROM tracker_jobs WHERE id = ${id} RETURNING id`;
+    if (!rows.length) return res.status(404).json({ error: 'Not in mirror' });
+    res.json({ ok: true, id });
+  } catch (err) {
+    console.error('DELETE /api/jobs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/jobs/bulk-delete — delete N jobs from the mirror in one
+// transaction. Body: { ids: [1, 2, 3, ...] }. Same isolation rule
+// as the single-DELETE above — never touches the tracker.
+app.post('/api/jobs/bulk-delete', async (req, res) => {
+  const raw = (req.body && req.body.ids) || [];
+  const ids = raw.map(x => parseInt(x, 10)).filter(x => Number.isFinite(x) && x > 0);
+  if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
+  try {
+    await dbReady;
+    const sql = getDb();
+    const stmts = ids.map(id => sql`DELETE FROM tracker_jobs WHERE id = ${id} RETURNING id`);
+    const results = await sql.transaction(stmts);
+    const deleted = results.reduce((n, r) => n + (r?.length || 0), 0);
+    res.json({ ok: true, deleted, requested: ids.length });
+  } catch (err) {
+    console.error('bulk-delete error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/jobs/:id — Hamza Guide's local edit endpoint. Writes ONLY
 // to our own tracker_jobs mirror; the tracker's real jobs table is
 // never touched. Registered before the tracker's PUT (line ~1036) so

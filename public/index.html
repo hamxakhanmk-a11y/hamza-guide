@@ -1575,6 +1575,41 @@
     white-space: nowrap; font-size: 13px;
   }
   .hg-sales-table tfoot td.money { color: #fff; }
+  /* Job-card select checkbox — sits top-right, doesn't fire the
+     card's edit onclick (event.stopPropagation on the input). */
+  .hg-job-select {
+    position: absolute; top: 8px; right: 10px; z-index: 2;
+    width: 16px; height: 16px; cursor: pointer; accent-color: var(--brand);
+  }
+  .hg-job-card { position: relative; }
+  .hg-job-card.hg-selected { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(163,45,45,0.15); }
+  /* Selection action bar — floats bottom-center when >0 selected. */
+  #hg-selbar {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    z-index: 200; display: none;
+    background: var(--brand-dark); color: #fff;
+    border-radius: 999px; padding: 10px 16px 10px 20px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+    align-items: center; gap: 14px;
+    font-family: var(--font);
+  }
+  #hg-selbar.on { display: inline-flex; }
+  #hg-selbar-count { font-weight: 700; font-size: 13px; }
+  #hg-selbar .btn-clear {
+    background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4);
+    padding: 6px 12px; border-radius: 999px; cursor: pointer; font-family: var(--font);
+    font-size: 12px; font-weight: 600;
+  }
+  #hg-selbar .btn-clear:hover { background: rgba(255,255,255,0.10); }
+  #hg-selbar .btn-delete {
+    background: #dc2626; color: #fff; border: none;
+    padding: 7px 14px; border-radius: 999px; cursor: pointer; font-family: var(--font);
+    font-size: 12px; font-weight: 700;
+  }
+  #hg-selbar .btn-delete:hover { background: #b91c1c; }
+  /* Sales-table row select cell */
+  .hg-sales-table td.selcell, .hg-sales-table th.selcell { width: 32px; text-align: center; padding-left: 8px; padding-right: 4px; }
+  .hg-sales-table td.selcell input { accent-color: var(--brand); width: 15px; height: 15px; cursor: pointer; }
   @media (max-width: 560px) {
     .hg-sales-hero { padding: 18px 16px; }
     .hg-sales-hero-num { font-size: 26px; }
@@ -1611,6 +1646,13 @@
     .hg-data-head { gap: 8px; }
   }
 </style>
+
+<!-- Floating selection action bar (hidden until N > 0 jobs selected). -->
+<div id="hg-selbar">
+  <span id="hg-selbar-count">0 selected</span>
+  <button class="btn-clear"  onclick="hgClearSelection()">Clear</button>
+  <button class="btn-delete" onclick="hgDeleteSelected()">Delete from archive</button>
+</div>
 
 <div id="hg-content" class="hg-main">
   <!-- Sync action bar. Visible only on Jobs and Inventory tabs. -->
@@ -1651,13 +1693,13 @@
           <option value="label">Label</option>
         </select>
         <select id="hg-jobs-period" class="hg-select" onchange="hgJobsPeriodChange()">
-          <option value="">All time</option>
-          <option value="today">Today</option>
+          <option value="today" selected>Today</option>
           <option value="week">This week</option>
           <option value="month">This month</option>
           <option value="last-month">Last month</option>
           <option value="year">This year</option>
           <option value="last-year">Last year</option>
+          <option value="">All time</option>
           <option value="custom">Custom range&hellip;</option>
         </select>
         <span id="hg-jobs-custom" style="display:none;gap:6px;align-items:center;">
@@ -2115,6 +2157,17 @@
 // ever touch it. ensureXlsx() injects the <script> on first call, returns
 // immediately on subsequent calls. Every export* function awaits this before
 // touching the global XLSX object.
+// Local calendar date as YYYY-MM-DD — avoids the UTC drift from
+// toISOString().slice(0,10) that Vercel (running UTC) exhibits in
+// Pakistan (UTC+5) every evening after 19:00. Referenced by the
+// ported exportStockTotal / exportManualConsumption + hgExportSales.
+function localDateISO(d = new Date()) {
+  const dt = d instanceof Date ? d : new Date(d);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
 let _xlsxLoadPromise = null;
 function ensureXlsx() {
   if (typeof XLSX !== 'undefined') return Promise.resolve();
@@ -12300,6 +12353,93 @@ function hgShowTab(name) {
 // Sync events reset them so the next tab open picks up new rows.
 let __hgJobsCache = null;
 let __hgInvCache  = null;
+// Selection state (shared by Jobs cards + Sales table rows).
+const __hgSelectedJobs = new Set();
+// Latest computed Sales snapshot — hgExportSales reads these so the
+// export matches what the user is looking at.
+let __hgLastSalesRows       = null;
+let __hgLastSalesTotals     = null;
+let __hgLastSalesFilterNote = '';
+
+// Toggle a single job's selection state; keeps card + row checkboxes
+// in sync so the same job can be checked / unchecked from either view.
+function hgToggleSelect(id, checked) {
+  if (checked) __hgSelectedJobs.add(id); else __hgSelectedJobs.delete(id);
+  document.querySelectorAll('.hg-job-card[data-hg-id="'+id+'"]').forEach(el => {
+    el.classList.toggle('hg-selected', checked);
+  });
+  document.querySelectorAll('input[type=checkbox][data-hg-id="'+id+'"]').forEach(el => {
+    if (el.checked !== checked) el.checked = checked;
+  });
+  hgUpdateSelBar();
+}
+function hgClearSelection() {
+  __hgSelectedJobs.clear();
+  document.querySelectorAll('input[type=checkbox][data-hg-id]').forEach(el => el.checked = false);
+  document.querySelectorAll('.hg-job-card.hg-selected').forEach(el => el.classList.remove('hg-selected'));
+  hgUpdateSelBar();
+}
+function hgUpdateSelBar() {
+  const bar = document.getElementById('hg-selbar');
+  const cnt = document.getElementById('hg-selbar-count');
+  const n = __hgSelectedJobs.size;
+  if (cnt) cnt.textContent = `${n} selected`;
+  if (bar) bar.classList.toggle('on', n > 0);
+}
+async function hgDeleteSelected() {
+  const ids = [...__hgSelectedJobs];
+  if (!ids.length) return;
+  const ok = confirm(
+    'Delete ' + ids.length + ' job' + (ids.length === 1 ? '' : 's') + ' from Hamza Guide\'s archive?\n\n' +
+    'The tracker database is not touched — this only removes from your local copy. If a deleted job is still marked Delivered in the tracker, the next Sync from Tracker will bring it back.'
+  );
+  if (!ok) return;
+  try {
+    const res = await fetch('/api/jobs/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Delete failed');
+    __hgSelectedJobs.clear();
+    __hgJobsCache = null;
+    hgUpdateSelBar();
+    if (document.getElementById('hg-jobs-content') && document.getElementById('hg-jobs-content').style.display !== 'none') hgRenderJobsList();
+    if (document.getElementById('hg-sales-pane')   && document.getElementById('hg-sales-pane').style.display   === 'block') hgRenderSales();
+    if (typeof notify === 'function') notify('Deleted ' + data.deleted + ' of ' + ids.length);
+  } catch (e) {
+    alert('Delete failed: ' + (e && e.message || e));
+  }
+}
+
+// Export the current Sales view (filters applied) to Excel. Reuses the
+// last snapshot from hgRenderSales so what the user sees is exactly
+// what gets written.
+async function hgExportSales() {
+  if (!__hgLastSalesRows) await hgRenderSales();
+  const rows   = __hgLastSalesRows   || [];
+  const totals = __hgLastSalesTotals || { totalQty: 0, totalRevenue: 0 };
+  if (!rows.length) { if (typeof notify === 'function') notify('Nothing to export.'); return; }
+  try { await ensureXlsx(); } catch (e) { alert(e.message || 'Failed to load Excel library.'); return; }
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+  const header = ['#','Date','Company','Job Name','Code','Type','MRP','Delivered Qty','Revenue'];
+  const aoa = [header];
+  for (const r of rows) {
+    aoa.push([r.id, r.date, r.client, r.name, r.code, r.type ? cap(r.type) : '', r.mrp || '', r.qty || '', r.revenue || '']);
+  }
+  aoa.push(['','','','','','TOTAL','', totals.totalQty || 0, totals.totalRevenue || 0]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = header.map((h, i) => ({
+    wch: Math.max(String(h).length, ...aoa.slice(1).map(r => String(r[i] ?? '').length)) + 2
+  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales');
+  const stamp = localDateISO();
+  const tag = __hgLastSalesFilterNote ? '-filtered' : '';
+  XLSX.writeFile(wb, `hamza-guide-sales${tag}-${stamp}.xlsx`);
+  if (typeof notify === 'function') notify('Exported!');
+}
 
 function _hgEsc(v) {
   return String(v == null ? '' : v)
@@ -12451,8 +12591,12 @@ async function hgRenderJobsList() {
     const paper    = j.paper || j.size || '';
     const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
     const isMil = (groupCounts[groupKey(j)] || 0) > 1;
+    const isSel = __hgSelectedJobs.has(j.id);
     return `
-      <div class="hg-job-card" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
+      <div class="hg-job-card ${isSel ? 'hg-selected' : ''}" data-hg-id="${j.id}" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
+        <input type="checkbox" class="hg-job-select" data-hg-id="${j.id}" ${isSel ? 'checked' : ''}
+               onclick="event.stopPropagation(); hgToggleSelect(${j.id}, this.checked)"
+               title="Select for bulk actions">
         <div class="hg-job-head">
           <span class="hg-job-id">#${_hgEsc(j.id)}${isMil ? '<span class="hg-job-mil" title="Part of a mil / group job">MIL</span>' : ''}</span>
           ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
@@ -13200,10 +13344,13 @@ async function hgRenderSales() {
   const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   // Preserve filter selections across re-renders (the whole pane is
-  // re-templated on every call).
+  // re-templated on every call). On the very first render — where
+  // the select elements don't exist in the DOM yet — default period
+  // to 'today' so the tab opens focused on today's revenue.
   const prevCompany = (document.getElementById('hg-sales-company') || {}).value || '';
   const prevType    = (document.getElementById('hg-sales-type')    || {}).value || '';
-  const prevPeriod  = (document.getElementById('hg-sales-period')  || {}).value || '';
+  const _periodEl   = document.getElementById('hg-sales-period');
+  const prevPeriod  = _periodEl ? _periodEl.value : 'today';
   const prevFrom    = (document.getElementById('hg-sales-from')    || {}).value || '';
   const prevTo      = (document.getElementById('hg-sales-to')      || {}).value || '';
   const companyList = [...new Set(__hgJobsCache.map(j => (j.client || '').trim()).filter(Boolean))]
@@ -13308,6 +13455,13 @@ async function hgRenderSales() {
     periodNote ? `Period: ${_hgEsc(periodNote)}` : '',
   ].filter(Boolean).join(' &middot; ');
   const fmtQty = (n) => (n ? n.toLocaleString('en-IN') : '');
+  // Cache the snapshot for hgExportSales.
+  __hgLastSalesRows       = jobRows;
+  __hgLastSalesTotals     = { totalQty, totalRevenue };
+  __hgLastSalesFilterNote = filterNote;
+  // "Select all visible" state — checks whether every visible id is
+  // currently in the selection set. Drives the header checkbox.
+  const allChecked = jobRows.length && jobRows.every(r => __hgSelectedJobs.has(r.id));
   pane.innerHTML = `
     <div class="hg-filters" style="margin-bottom:14px;">
       ${compSelHtml}
@@ -13316,12 +13470,17 @@ async function hgRenderSales() {
       ${customHtml}
       ${(compFilter || typeFilter || prevPeriod) ? `
         <button class="btn btn-sm" onclick="hgClearSalesFilters()">Clear filters</button>` : ''}
+      <button class="btn btn-sm" onclick="hgExportSales()" style="margin-left:auto;background:#166534;color:#fff;border-color:#166534;">&#128202; Export to Excel</button>
     </div>
     ${filterNote ? `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${filterNote}</div>` : ''}
     <div class="hg-sales-tablewrap">
       <table class="hg-sales-table">
         <thead>
           <tr>
+            <th class="selcell">
+              <input type="checkbox" ${allChecked ? 'checked' : ''} onchange="hgToggleAllVisibleSales(this.checked)"
+                     title="Select every row in this view">
+            </th>
             <th>#</th>
             <th>Date</th>
             <th>Company</th>
@@ -13336,6 +13495,11 @@ async function hgRenderSales() {
         <tbody>
           ${jobRows.length ? jobRows.map(r => `
             <tr class="${r.revenue === 0 ? 'muted' : ''}">
+              <td class="selcell">
+                <input type="checkbox" data-hg-id="${r.id}"
+                       ${__hgSelectedJobs.has(r.id) ? 'checked' : ''}
+                       onchange="hgToggleSelect(${r.id}, this.checked)">
+              </td>
               <td class="num">${_hgEsc(r.id)}</td>
               <td>${_hgEsc(r.date)}</td>
               <td>${_hgEsc(r.client)}</td>
@@ -13347,14 +13511,14 @@ async function hgRenderSales() {
               <td class="num money">${r.revenue ? fmtMoney(r.revenue) : '—'}</td>
             </tr>
           `).join('') : `
-            <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+            <tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
               No jobs match the current filters.
             </td></tr>`}
         </tbody>
         ${jobRows.length ? `
         <tfoot>
           <tr>
-            <td colspan="7">TOTAL &mdash; ${jobRows.length} job${jobRows.length === 1 ? '' : 's'}
+            <td colspan="8">TOTAL &mdash; ${jobRows.length} job${jobRows.length === 1 ? '' : 's'}
               ${contribCount < jobRows.length ? `<span style="opacity:0.85;font-weight:500;font-size:11px;"> (${contribCount} contributing)</span>` : ''}
             </td>
             <td class="num">${fmtQty(totalQty)}</td>
@@ -13364,6 +13528,15 @@ async function hgRenderSales() {
       </table>
     </div>
   `;
+  hgUpdateSelBar();
+}
+// Header "select-all-visible" checkbox in the Sales table.
+function hgToggleAllVisibleSales(checked) {
+  const rows = __hgLastSalesRows || [];
+  for (const r of rows) {
+    if (checked) __hgSelectedJobs.add(r.id); else __hgSelectedJobs.delete(r.id);
+  }
+  hgRenderSales();
 }
 
 function hgClearSalesFilters() {
