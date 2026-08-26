@@ -1472,10 +1472,9 @@
   <!-- Sync action bar. Visible only on Jobs and Inventory tabs. -->
   <div id="hg-data-actions" style="display:none;">
     <div class="hg-sync-row">
-      <button id="hg-sync-btn" onclick="hgSyncTracker(false)">&#128260; Sync from Tracker</button>
-      <button id="hg-sync-full" onclick="hgSyncTracker(true)" title="Re-fetch every row from the tracker (slower — catches updates to existing rows)">Force full re-sync</button>
+      <button id="hg-sync-btn" onclick="hgSyncTracker()">&#128260; Sync from Tracker</button>
       <span id="hg-sync-status" style="font-size:12px; color:var(--text2);">
-        Incremental sync &mdash; only pulls new rows since the last sync.
+        Pulls every job and inventory item &mdash; new rows AND edits to existing ones.
       </span>
     </div>
   </div>
@@ -12185,6 +12184,8 @@ async function hgRenderJobsList() {
           <div class="hg-spec"><span class="hg-spec-key">Machine</span><span class="hg-spec-val">${_hgEsc(j.machine) || '&mdash;'}</span></div>
           <div class="hg-spec"><span class="hg-spec-key">Ups</span><span class="hg-spec-val">${_hgEsc(j.ups) || '&mdash;'}</span></div>
           <div class="hg-spec"><span class="hg-spec-key">Color</span><span class="hg-spec-val">${_hgEsc(color) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Unit Carton</span><span class="hg-spec-val">${_hgEsc(j.cartonqty) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Delivered Qty</span><span class="hg-spec-val">${_hgEsc(j.delqty) || '&mdash;'}</span></div>
           ${coatings ? `<div class="hg-spec wide"><span class="hg-spec-key">Coatings</span><span class="hg-spec-val">${_hgEsc(coatings)}</span></div>` : ''}
         </div>
       </div>
@@ -12238,24 +12239,21 @@ async function hgRenderInventoryList() {
   table.innerHTML = head + '<tbody>' + body + '</tbody>';
 }
 
-// Sync tracker jobs + inventory into Hamza Guide's own DB. Incremental
-// by default (only rows with id > local_max are pulled — fast). Pass
-// forceFull=true to re-fetch every row (catches in-place updates).
-// On success, cache-bust the Jobs / Inventory tables and re-render
-// whichever tab is currently open.
-async function hgSyncTracker(forceFull) {
+// Sync tracker jobs + inventory into Hamza Guide's own DB. Full sync
+// every run — catches new rows AND updates to existing rows (a job's
+// stage/qty/particulars change flows through on the next click).
+// Cache-busts the local tables and re-renders whichever tab is open.
+async function hgSyncTracker() {
   const btn    = document.getElementById('hg-sync-btn');
-  const full   = document.getElementById('hg-sync-full');
   const status = document.getElementById('hg-sync-status');
   if (!btn || !status) return;
   const prevLabel = btn.textContent;
-  btn.disabled = true; if (full) full.disabled = true;
+  btn.disabled = true;
   btn.style.opacity = '0.7';
-  btn.textContent = forceFull ? 'Full re-sync…' : 'Syncing…';
-  status.textContent = forceFull ? 'Re-fetching every row from tracker…' : 'Pulling new rows since last sync…';
+  btn.textContent = 'Syncing…';
+  status.textContent = 'Pulling latest jobs and inventory from tracker…';
   try {
-    const url = '/api/sync-tracker' + (forceFull ? '?full=1' : '');
-    const res = await fetch(url, { method: 'POST' });
+    const res = await fetch('/api/sync-tracker', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
     // Build a status line that answers "did I pick up everything?"
@@ -12279,11 +12277,10 @@ async function hgSyncTracker(forceFull) {
     if (data.jobs_error)      errs.push('jobs: ' + data.jobs_error);
     if (data.inventory_error) errs.push('inventory: ' + data.inventory_error);
     const errText = errs.length ? ' · ' + errs.join(' | ') : '';
-    const newBits = [];
-    if (data.jobs      != null) newBits.push(`${data.jobs} new jobs`);
-    if (data.inventory != null) newBits.push(`${data.inventory} new inventory`);
-    const newSummary = newBits.length ? `${newBits.join(' + ')} · ` : '';
-    status.textContent = `${check} ${newSummary}${label}${detail} · ${new Date().toLocaleTimeString()}${errText}`;
+    // With full-sync, data.jobs / data.inventory = rows scanned (which
+    // equals the tracker's live totals). Show the tracker/archive
+    // comparison from parts[] rather than duplicating a "new" count.
+    status.textContent = `${check} ${label}${detail} · ${new Date().toLocaleTimeString()}${errText}`;
     status.style.color = data.complete ? '#166534' : '#A32D2D';
     setTimeout(() => { status.style.color = 'var(--text2)'; }, 12000);
     // Bust the local caches so the tables re-fetch on next render, then
@@ -12300,8 +12297,6 @@ async function hgSyncTracker(forceFull) {
     setTimeout(() => { status.style.color = 'var(--text2)'; }, 4000);
   } finally {
     btn.disabled = false;
-    const full2 = document.getElementById('hg-sync-full');
-    if (full2) full2.disabled = false;
     btn.style.opacity = '';
     btn.textContent = prevLabel;
   }

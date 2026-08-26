@@ -871,45 +871,50 @@ async function syncTrackerHandler(req, res) {
   const result  = { ok: true, mode: 'upsert (no deletions — safe archive)', synced_at: new Date().toISOString() };
   try {
     await dbReady;
-    // Incremental sync: only pull rows whose id is greater than the
-    // largest id already sitting in our mirror. First sync = full
-    // (max is 0). Subsequent syncs = just the new rows → fast.
-    // Set ?full=1 on the request URL to force a re-fetch of every row
-    // (useful when the tracker has updated older jobs in place).
-    const forceFull = req.query && (req.query.full === '1' || req.query.full === 'true');
+    // Full sync every time — catches both new rows AND updates to
+    // existing rows (a job's stage, delivered qty, particulars, etc.).
+    // Upsert semantics: nothing is ever deleted from the mirror; rows
+    // that still exist in tracker overwrite our stale copy, rows that
+    // vanished from tracker stay preserved on our side.
+    //
+    // Speed: batch INSERTs via sql.transaction() so N rows = ceil(N/CHUNK)
+    // HTTP round-trips to Neon, not N. 300 rows in ~6 requests.
+    const CHUNK = 50;
+    async function upsertBatch(rows, table) {
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const batch = rows.slice(i, i + CHUNK);
+        const stmts = batch.map(r => {
+          if (table === 'tracker_jobs') {
+            return local`
+              INSERT INTO tracker_jobs (id, data, synced_at)
+              VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+            `;
+          }
+          return local`
+            INSERT INTO tracker_inventory_items (id, data, synced_at)
+            VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+            ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+          `;
+        });
+        await local.transaction(stmts);
+      }
+    }
     // Jobs
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      const [m] = forceFull ? [{ max: 0 }] : await local`SELECT COALESCE(MAX(id), 0)::int AS max FROM tracker_jobs`;
-      const since = m?.max ?? 0;
-      const rows = await tracker`SELECT * FROM jobs WHERE id > ${since} ORDER BY id`;
-      for (const r of rows) {
-        await local`
-          INSERT INTO tracker_jobs (id, data, synced_at)
-          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
-        `;
-      }
-      result.jobs         = rows.length;   // new rows pulled this run
-      result.jobs_since   = since;
+      const rows = await tracker`SELECT * FROM jobs ORDER BY id`;
+      await upsertBatch(rows, 'tracker_jobs');
+      result.jobs = rows.length;
     } catch (e) { result.jobs_error = e.message; }
     // Inventory items
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      const [m] = forceFull ? [{ max: 0 }] : await local`SELECT COALESCE(MAX(id), 0)::int AS max FROM tracker_inventory_items`;
-      const since = m?.max ?? 0;
-      const rows = await tracker`SELECT * FROM inventory_items WHERE id > ${since} ORDER BY id`;
-      for (const r of rows) {
-        await local`
-          INSERT INTO tracker_inventory_items (id, data, synced_at)
-          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
-        `;
-      }
-      result.inventory       = rows.length;
-      result.inventory_since = since;
+      const rows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
+      await upsertBatch(rows, 'tracker_inventory_items');
+      result.inventory = rows.length;
     } catch (e) { result.inventory_error = e.message; }
-    result.mode = forceFull ? 'full re-sync (upsert)' : 'incremental (id > last_synced)';
+    result.mode = 'full sync (upsert — new rows + updates)';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
