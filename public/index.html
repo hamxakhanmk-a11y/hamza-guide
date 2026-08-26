@@ -1540,17 +1540,41 @@
   .hg-sales-row:last-child { border-bottom: none; }
   .hg-sales-row-label { font-size: 13px; color: var(--text); word-break: break-word; }
   .hg-sales-row-val   { font-size: 14px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  /* Per-job list inside Sales — compact rows with meta line under name. */
-  .hg-sales-job {
-    display: flex; justify-content: space-between; align-items: center;
-    gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--border);
+  /* Sales table — sticky header + sticky total row so the totals stay
+     visible while scrolling a long report, like the tracker's Jobs
+     Report layout. Horizontal scroll on narrow viewports. */
+  .hg-sales-tablewrap {
+    max-height: calc(100vh - 300px);
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
   }
-  .hg-sales-job:last-child { border-bottom: none; }
-  .hg-sales-job-left  { min-width: 0; flex: 1; }
-  .hg-sales-job-name  { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-word; }
-  .hg-sales-job-meta  { font-size: 11px; color: var(--text2); margin-top: 2px; }
-  .hg-sales-job-calc  { font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; margin-top: 2px; }
-  .hg-sales-jobs-scroll { max-height: 420px; overflow-y: auto; }
+  .hg-sales-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+  .hg-sales-table thead th {
+    position: sticky; top: 0; z-index: 3;
+    background: var(--bg2); color: var(--text);
+    padding: 9px 10px; text-align: left; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .hg-sales-table thead th.num,
+  .hg-sales-table tbody td.num,
+  .hg-sales-table tfoot td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hg-sales-table tbody td {
+    padding: 7px 10px; border-bottom: 1px solid var(--border);
+    color: var(--text); vertical-align: top;
+  }
+  .hg-sales-table tbody tr:hover td { background: var(--bg2); }
+  .hg-sales-table tbody tr.muted td { color: var(--text3); }
+  .hg-sales-table td.money { font-weight: 700; color: var(--brand); }
+  .hg-sales-table tfoot td {
+    position: sticky; bottom: 0; z-index: 2;
+    background: var(--brand); color: #fff; font-weight: 700;
+    padding: 12px 10px; border-top: 2px solid var(--brand-dark);
+    white-space: nowrap; font-size: 13px;
+  }
+  .hg-sales-table tfoot td.money { color: #fff; }
   @media (max-width: 560px) {
     .hg-sales-hero { padding: 18px 16px; }
     .hg-sales-hero-num { font-size: 26px; }
@@ -13258,11 +13282,32 @@ async function hgRenderSales() {
       ? (prevFrom || prevTo ? `${prevFrom || '…'} to ${prevTo || '…'}` : 'Custom range')
       : periodLabelMap[prevPeriod])
     : '';
+  // Build per-job rows for the table (newest date first). Include EVERY
+  // job in the filtered set — even the ones with no MRP or delqty —
+  // so the user sees the full picture. Zero-revenue rows are muted.
+  const jobRows = filtered.map(j => {
+    const mrp = parseNum(j.mrp);
+    const qty = parseNum(j.delqty);
+    return {
+      id: j.id,
+      date: _hgJobDate(j),
+      client: (j.client || '').trim(),
+      code: j.jobcode || '',
+      name: j.name || '',
+      type: _hgJobType(j),
+      mrp, qty,
+      revenue: mrp * qty,
+    };
+  }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const totalQty     = jobRows.reduce((s, r) => s + r.qty, 0);
+  const totalRevenue = jobRows.reduce((s, r) => s + r.revenue, 0);
+  const contribCount = jobRows.filter(r => r.revenue > 0).length;
   const filterNote = [
     compFilter ? `Company: ${_hgEsc(prevCompany)}` : '',
     typeFilter ? `Type: ${_hgEsc(cap(prevType))}` : '',
     periodNote ? `Period: ${_hgEsc(periodNote)}` : '',
   ].filter(Boolean).join(' &middot; ');
+  const fmtQty = (n) => (n ? n.toLocaleString('en-IN') : '');
   pane.innerHTML = `
     <div class="hg-filters" style="margin-bottom:14px;">
       ${compSelHtml}
@@ -13272,56 +13317,52 @@ async function hgRenderSales() {
       ${(compFilter || typeFilter || prevPeriod) ? `
         <button class="btn btn-sm" onclick="hgClearSalesFilters()">Clear filters</button>` : ''}
     </div>
-    <div class="hg-sales-hero">
-      <div class="hg-sales-hero-label">TOTAL SALES${filterNote ? ' &mdash; ' + filterNote : ''}</div>
-      <div class="hg-sales-hero-num">${fmtMoney(total)}</div>
-      <div class="hg-sales-hero-sub">
-        MRP &times; delivered qty across ${contribJobs} of ${filtered.length} job${filtered.length === 1 ? '' : 's'}
-        &nbsp;&middot;&nbsp; ${byCompany.size} compan${byCompany.size === 1 ? 'y' : 'ies'}
-        ${skipped > 0 ? `<br>${skipped} job${skipped === 1 ? '' : 's'} skipped (missing MRP or delivered qty)` : ''}
-      </div>
+    ${filterNote ? `<div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${filterNote}</div>` : ''}
+    <div class="hg-sales-tablewrap">
+      <table class="hg-sales-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Date</th>
+            <th>Company</th>
+            <th>Job Name</th>
+            <th>Code</th>
+            <th>Type</th>
+            <th class="num">MRP</th>
+            <th class="num">Delivered Qty</th>
+            <th class="num">Revenue</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${jobRows.length ? jobRows.map(r => `
+            <tr class="${r.revenue === 0 ? 'muted' : ''}">
+              <td class="num">${_hgEsc(r.id)}</td>
+              <td>${_hgEsc(r.date)}</td>
+              <td>${_hgEsc(r.client)}</td>
+              <td>${_hgEsc(r.name)}</td>
+              <td>${_hgEsc(r.code)}</td>
+              <td>${r.type ? _hgEsc(cap(r.type)) : ''}</td>
+              <td class="num">${r.mrp ? _hgEsc(String(r.mrp)) : ''}</td>
+              <td class="num">${fmtQty(r.qty)}</td>
+              <td class="num money">${r.revenue ? fmtMoney(r.revenue) : '—'}</td>
+            </tr>
+          `).join('') : `
+            <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+              No jobs match the current filters.
+            </td></tr>`}
+        </tbody>
+        ${jobRows.length ? `
+        <tfoot>
+          <tr>
+            <td colspan="7">TOTAL &mdash; ${jobRows.length} job${jobRows.length === 1 ? '' : 's'}
+              ${contribCount < jobRows.length ? `<span style="opacity:0.85;font-weight:500;font-size:11px;"> (${contribCount} contributing)</span>` : ''}
+            </td>
+            <td class="num">${fmtQty(totalQty)}</td>
+            <td class="num money">${fmtMoney(totalRevenue)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
     </div>
-    ${(!compFilter && companyRows.length > 1) ? `
-    <div class="hg-sales-section">
-      <div class="hg-sales-section-title">By Company</div>
-      ${companyRows.map(([c, v]) => `
-        <div class="hg-sales-row">
-          <span class="hg-sales-row-label">${_hgEsc(c)}</span>
-          <span class="hg-sales-row-val">${fmtMoney(v)}</span>
-        </div>
-      `).join('')}
-    </div>` : ''}
-    ${(!typeFilter && typeRows.length > 1) ? `
-    <div class="hg-sales-section">
-      <div class="hg-sales-section-title">By Product Type</div>
-      ${typeRows.map(([t, v]) => `
-        <div class="hg-sales-row">
-          <span class="hg-sales-row-label">${_hgEsc(cap(t))}</span>
-          <span class="hg-sales-row-val">${fmtMoney(v)}</span>
-        </div>
-      `).join('')}
-    </div>` : ''}
-    ${perJob.length ? `
-    <div class="hg-sales-section">
-      <div class="hg-sales-section-title">Per Job &mdash; ${perJob.length} contributing (highest first)</div>
-      <div class="hg-sales-jobs-scroll">
-        ${perJob.map(({ j, sale, mrp, qty, client, type }) => `
-          <div class="hg-sales-job">
-            <div class="hg-sales-job-left">
-              <div class="hg-sales-job-name">#${_hgEsc(j.id)} &middot; ${_hgEsc(j.name)}</div>
-              <div class="hg-sales-job-meta">${_hgEsc(client)}${type && type !== 'other' ? ' &middot; ' + _hgEsc(cap(type)) : ''}${j.jobcode ? ' &middot; ' + _hgEsc(j.jobcode) : ''}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="hg-sales-row-val">${fmtMoney(sale)}</div>
-              <div class="hg-sales-job-calc">${_hgEsc(String(mrp))} &times; ${qty.toLocaleString('en-IN')}</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    </div>` : `
-    <div class="hg-sales-section" style="text-align:center;color:var(--text2);">
-      No sales to show for this filter combination.
-    </div>`}
   `;
 }
 
