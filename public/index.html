@@ -1465,6 +1465,7 @@
     transform: translateY(-2px) scale(1.015);
     z-index: 2;
     border-color: var(--brand-soft);
+    background: rgba(163, 45, 45, 0.04);
   }
   .hg-job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
   .hg-job-id  { color: var(--brand); font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
@@ -1565,8 +1566,26 @@
     padding: 7px 10px; border-bottom: 1px solid var(--border);
     color: var(--text); vertical-align: top;
   }
-  .hg-sales-table tbody tr:hover td { background: var(--bg2); }
+  .hg-sales-table tbody tr:hover td { background: rgba(163, 45, 45, 0.07); }
   .hg-sales-table tbody tr.muted td { color: var(--text3); }
+  /* Responsive: tighten the sales table on tablet and mobile.
+     Horizontal scroll on the wrapper handles column overflow so
+     no columns get hidden. */
+  @media (max-width: 900px) {
+    .hg-sales-tablewrap { max-height: calc(100vh - 340px); }
+    .hg-sales-table { font-size: 11px; }
+    .hg-sales-table thead th { padding: 7px 8px; font-size: 9px; }
+    .hg-sales-table tbody td { padding: 6px 8px; }
+    .hg-sales-table tfoot td { padding: 10px 8px; font-size: 12px; }
+    .hg-sales-table td.selcell, .hg-sales-table th.selcell { width: 28px; padding-left: 6px; padding-right: 2px; }
+  }
+  @media (max-width: 560px) {
+    .hg-sales-tablewrap { max-height: calc(100vh - 380px); }
+    .hg-sales-table { font-size: 11px; }
+    .hg-sales-table thead th { padding: 6px 6px; font-size: 9px; letter-spacing: 0.03em; }
+    .hg-sales-table tbody td { padding: 5px 6px; }
+    .hg-sales-table tfoot td { padding: 9px 6px; font-size: 11px; }
+  }
   .hg-sales-table td.money { font-weight: 700; color: var(--brand); }
   .hg-sales-table tfoot td {
     position: sticky; bottom: 0; z-index: 2;
