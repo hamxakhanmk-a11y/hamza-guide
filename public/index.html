@@ -1540,6 +1540,17 @@
   .hg-sales-row:last-child { border-bottom: none; }
   .hg-sales-row-label { font-size: 13px; color: var(--text); word-break: break-word; }
   .hg-sales-row-val   { font-size: 14px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Per-job list inside Sales — compact rows with meta line under name. */
+  .hg-sales-job {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--border);
+  }
+  .hg-sales-job:last-child { border-bottom: none; }
+  .hg-sales-job-left  { min-width: 0; flex: 1; }
+  .hg-sales-job-name  { font-size: 13px; font-weight: 600; color: var(--text); word-break: break-word; }
+  .hg-sales-job-meta  { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .hg-sales-job-calc  { font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .hg-sales-jobs-scroll { max-height: 420px; overflow-y: auto; }
   @media (max-width: 560px) {
     .hg-sales-hero { padding: 18px 16px; }
     .hg-sales-hero-num { font-size: 26px; }
@@ -13068,11 +13079,10 @@ function hgJobsSubTab(name) {
   if (isSales) hgRenderSales();
 }
 
-// Compute Sales = Σ (MRP × delivered qty) across all archived jobs.
-// MRP and delqty are TEXT fields in the tracker, so we parse loosely
-// (strip anything that isn't a digit / dot / minus). Jobs missing
-// either value are skipped and counted so the user sees why the total
-// might feel low.
+// Compute Sales = Σ (MRP × delivered qty) across archived jobs, with
+// optional Company + Type filters. MRP and delqty are TEXT fields in
+// the tracker; parseNum strips anything that isn't a digit/dot/minus.
+// Jobs missing either value are skipped and counted.
 async function hgRenderSales() {
   const pane = document.getElementById('hg-sales-pane');
   if (!pane) return;
@@ -13092,10 +13102,38 @@ async function hgRenderSales() {
     return Number.isFinite(n) ? n : 0;
   };
   const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  // Preserve filter selections across re-renders.
+  const prevCompany = (document.getElementById('hg-sales-company') || {}).value || '';
+  const prevType    = (document.getElementById('hg-sales-type')    || {}).value || '';
+  const companyList = [...new Set(__hgJobsCache.map(j => (j.client || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const compSelHtml = `
+    <select id="hg-sales-company" class="hg-select" onchange="hgRenderSales()">
+      <option value="">All companies</option>
+      ${companyList.map(c => `<option value="${_hgEsc(c)}"${c === prevCompany ? ' selected' : ''}>${_hgEsc(c)}</option>`).join('')}
+    </select>`;
+  const typeSelHtml = `
+    <select id="hg-sales-type" class="hg-select" onchange="hgRenderSales()">
+      <option value="">All types</option>
+      ${['syrup','tablet','capsule','leaflet','label'].map(t =>
+        `<option value="${t}"${t === prevType ? ' selected' : ''}>${cap(t)}</option>`
+      ).join('')}
+    </select>`;
+  // Apply filters
+  const compFilter = prevCompany.trim().toLowerCase();
+  const typeFilter = prevType.trim().toLowerCase();
+  const filtered = __hgJobsCache.filter(j => {
+    if (compFilter && (j.client || '').trim().toLowerCase() !== compFilter) return false;
+    if (typeFilter && _hgJobType(j) !== typeFilter) return false;
+    return true;
+  });
+  // Compute rollup
   let total = 0, contribJobs = 0;
   const byCompany = new Map();
   const byType    = new Map();
-  for (const j of __hgJobsCache) {
+  const perJob = [];
+  for (const j of filtered) {
     const mrp = parseNum(j.mrp);
     const qty = parseNum(j.delqty);
     if (mrp <= 0 || qty <= 0) continue;
@@ -13106,23 +13144,33 @@ async function hgRenderSales() {
     const type   = _hgJobType(j) || 'other';
     byCompany.set(client, (byCompany.get(client) || 0) + sale);
     byType.set(type,      (byType.get(type)      || 0) + sale);
+    perJob.push({ j, sale, mrp, qty, client, type });
   }
-  const skipped = __hgJobsCache.length - contribJobs;
+  const skipped = filtered.length - contribJobs;
   const companyRows = [...byCompany.entries()].sort((a, b) => b[1] - a[1]);
-  const typeOrder = ['syrup', 'tablet', 'capsule', 'leaflet', 'label', 'other'];
-  const typeRows = [...byType.entries()].sort((a, b) => b[1] - a[1]);
-  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const typeRows    = [...byType.entries()   ].sort((a, b) => b[1] - a[1]);
+  perJob.sort((a, b) => b.sale - a.sale);
+  const filterNote = [
+    compFilter ? `Company: ${_hgEsc(prevCompany)}` : '',
+    typeFilter ? `Type: ${_hgEsc(cap(prevType))}` : '',
+  ].filter(Boolean).join(' &middot; ');
   pane.innerHTML = `
+    <div class="hg-filters" style="margin-bottom:14px;">
+      ${compSelHtml}
+      ${typeSelHtml}
+      ${(compFilter || typeFilter) ? `
+        <button class="btn btn-sm" onclick="hgClearSalesFilters()">Clear filters</button>` : ''}
+    </div>
     <div class="hg-sales-hero">
-      <div class="hg-sales-hero-label">TOTAL SALES</div>
+      <div class="hg-sales-hero-label">TOTAL SALES${filterNote ? ' &mdash; ' + filterNote : ''}</div>
       <div class="hg-sales-hero-num">${fmtMoney(total)}</div>
       <div class="hg-sales-hero-sub">
-        MRP &times; delivered qty across ${contribJobs} of ${__hgJobsCache.length} archived jobs
+        MRP &times; delivered qty across ${contribJobs} of ${filtered.length} job${filtered.length === 1 ? '' : 's'}
         &nbsp;&middot;&nbsp; ${byCompany.size} compan${byCompany.size === 1 ? 'y' : 'ies'}
         ${skipped > 0 ? `<br>${skipped} job${skipped === 1 ? '' : 's'} skipped (missing MRP or delivered qty)` : ''}
       </div>
     </div>
-    ${companyRows.length ? `
+    ${(!compFilter && companyRows.length > 1) ? `
     <div class="hg-sales-section">
       <div class="hg-sales-section-title">By Company</div>
       ${companyRows.map(([c, v]) => `
@@ -13132,7 +13180,7 @@ async function hgRenderSales() {
         </div>
       `).join('')}
     </div>` : ''}
-    ${typeRows.length ? `
+    ${(!typeFilter && typeRows.length > 1) ? `
     <div class="hg-sales-section">
       <div class="hg-sales-section-title">By Product Type</div>
       ${typeRows.map(([t, v]) => `
@@ -13142,12 +13190,36 @@ async function hgRenderSales() {
         </div>
       `).join('')}
     </div>` : ''}
-    ${!contribJobs ? `
+    ${perJob.length ? `
+    <div class="hg-sales-section">
+      <div class="hg-sales-section-title">Per Job &mdash; ${perJob.length} contributing (highest first)</div>
+      <div class="hg-sales-jobs-scroll">
+        ${perJob.map(({ j, sale, mrp, qty, client, type }) => `
+          <div class="hg-sales-job">
+            <div class="hg-sales-job-left">
+              <div class="hg-sales-job-name">#${_hgEsc(j.id)} &middot; ${_hgEsc(j.name)}</div>
+              <div class="hg-sales-job-meta">${_hgEsc(client)}${type && type !== 'other' ? ' &middot; ' + _hgEsc(cap(type)) : ''}${j.jobcode ? ' &middot; ' + _hgEsc(j.jobcode) : ''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="hg-sales-row-val">${fmtMoney(sale)}</div>
+              <div class="hg-sales-job-calc">${_hgEsc(String(mrp))} &times; ${qty.toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : `
     <div class="hg-sales-section" style="text-align:center;color:var(--text2);">
-      No sales to show. Every archived job either has a blank MRP or a blank delivered qty.
-      Fill those in on the job card and reopen this tab.
-    </div>` : ''}
+      No sales to show for this filter combination.
+    </div>`}
   `;
+}
+
+function hgClearSalesFilters() {
+  const c = document.getElementById('hg-sales-company');
+  const t = document.getElementById('hg-sales-type');
+  if (c) c.value = '';
+  if (t) t.value = '';
+  hgRenderSales();
 }
 
 // Inventory sub-tab switcher. Delegates to the tracker's own report
