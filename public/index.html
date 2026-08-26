@@ -12154,12 +12154,18 @@ async function hgRenderJobsList() {
     grid.innerHTML = '<div class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</div>';
     return;
   }
-  // Best-effort "Color" extraction. The tracker's schema doesn't carry
-  // a single color column; try a few likely spots in particulars.
+  // Color = the tracker's "No. of Colors" cell inside the job card
+  // modal, which stores its value at
+  //   j.particulars.no_of_colors.quantity   (see PARTICULARS_ROWS
+  //   line 1977 and the .quantity read at line 11429).
+  // Fall back to a couple of other spots in case older jobs used
+  // freeform keys.
   const pickColor = (j) => {
-    if (j.color) return j.color;
     const p = j.particulars || {};
-    return p.color || p.colour || p.ink || p.inks || p.colors || '';
+    const noc = p.no_of_colors;
+    if (noc && typeof noc === 'object') return noc.quantity || noc.details || '';
+    if (typeof noc === 'string' || typeof noc === 'number') return noc;
+    return j.color || p.color || p.colour || p.inks || '';
   };
   grid.innerHTML = rows.map(j => {
     const coatings = Array.isArray(j.coatings) ? j.coatings.filter(Boolean).join(', ') : (j.coatings || '');
