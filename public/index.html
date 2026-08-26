@@ -12417,8 +12417,7 @@ async function hgRenderInventoryList() {
           <div class="hg-spec"><span class="hg-spec-key">Size</span><span class="hg-spec-val">${_hgEsc(i.size) || '&mdash;'}</span></div>
           <div class="hg-spec"><span class="hg-spec-key">GSM</span><span class="hg-spec-val">${_hgEsc(i.gsm) || '&mdash;'}</span></div>
           <div class="hg-spec"><span class="hg-spec-key">Balance</span><span class="hg-spec-val hg-inv-bal-strong ${balClass}">${fmt(bal)}</span></div>
-          <div class="hg-spec"><span class="hg-spec-key">Reorder</span><span class="hg-spec-val">${th > 0 ? fmt(th) : '&mdash;'}</span></div>
-          ${i.supplier ? `<div class="hg-spec wide"><span class="hg-spec-key">Supplier</span><span class="hg-spec-val">${_hgEsc(i.supplier)}</span></div>` : ''}
+          ${i.supplier ? `<div class="hg-spec"><span class="hg-spec-key">Supplier</span><span class="hg-spec-val">${_hgEsc(i.supplier)}</span></div>` : ''}
           ${i.is_offcut && i.cut_from_size ? `<div class="hg-spec wide"><span class="hg-spec-key">Cut From</span><span class="hg-spec-val">${_hgEsc(i.cut_from_size)}</span></div>` : ''}
         </div>
       </div>
@@ -12443,14 +12442,11 @@ async function hgSyncTracker() {
     const res = await fetch('/api/sync-tracker', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
-    // Freeze-once-pulled: report what was newly added this run and
-    // how big the archive is now. data.jobs / data.inventory = rows
-    // the tracker had matching criteria this run (delivered + all
-    // inventory); data.jobs_new / data.inventory_new = rows actually
-    // written (existing rows are left alone).
+    // Jobs are frozen (only new-delivery counts matter); inventory
+    // is refreshed on every sync (all rows overwritten).
     const parts = [];
-    if (data.jobs_new     != null) parts.push(`+${data.jobs_new} new job${data.jobs_new === 1 ? '' : 's'}`);
-    if (data.inventory_new!= null) parts.push(`+${data.inventory_new} inventory`);
+    if (data.jobs_new           != null) parts.push(`+${data.jobs_new} new job${data.jobs_new === 1 ? '' : 's'}`);
+    if (data.inventory_refreshed != null) parts.push(`${data.inventory_refreshed} inventory refreshed`);
     if (data.archive_jobs != null || data.archive_inventory != null) {
       parts.push(`archive: ${data.archive_jobs ?? 0} jobs · ${data.archive_inventory ?? 0} inventory`);
     }

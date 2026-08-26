@@ -882,47 +882,55 @@ async function syncTrackerHandler(req, res) {
     // Speed: batch INSERTs via sql.transaction() → ceil(N/CHUNK) HTTP
     // round-trips instead of N.
     const CHUNK = 50;
-    async function insertOnlyBatch(rows, table) {
+    // Jobs mirror: INSERT ... ON CONFLICT DO NOTHING → freeze once pulled.
+    // Inventory mirror: INSERT ... ON CONFLICT DO UPDATE → refresh every
+    // sync so current_balance / supplier / reorder stay live.
+    async function jobsInsertOnlyBatch(rows) {
       let added = 0;
       for (let i = 0; i < rows.length; i += CHUNK) {
         const batch = rows.slice(i, i + CHUNK);
-        const stmts = batch.map(r => {
-          if (table === 'tracker_jobs') {
-            return local`
-              INSERT INTO tracker_jobs (id, data, synced_at)
-              VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-              ON CONFLICT (id) DO NOTHING
-              RETURNING id
-            `;
-          }
-          return local`
-            INSERT INTO tracker_inventory_items (id, data, synced_at)
-            VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-            ON CONFLICT (id) DO NOTHING
-            RETURNING id
-          `;
-        });
+        const stmts = batch.map(r => local`
+          INSERT INTO tracker_jobs (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO NOTHING
+          RETURNING id
+        `);
         const results = await local.transaction(stmts);
         for (const r of results) added += (r?.length || 0);
       }
       return added;
     }
+    async function inventoryUpsertBatch(rows) {
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const batch = rows.slice(i, i + CHUNK);
+        const stmts = batch.map(r => local`
+          INSERT INTO tracker_inventory_items (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO UPDATE
+            SET data = EXCLUDED.data, synced_at = NOW()
+        `);
+        await local.transaction(stmts);
+      }
+      return rows.length;
+    }
     // Jobs — delivered only (stage_index = 7, the "Delivered" stage
-    // per STAGES[] above).
+    // per STAGES[] above). Frozen once pulled.
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
       const rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 ORDER BY id`;
-      result.jobs_new  = await insertOnlyBatch(rows, 'tracker_jobs');
+      result.jobs_new  = await jobsInsertOnlyBatch(rows);
       result.jobs      = rows.length;
     } catch (e) { result.jobs_error = e.message; }
-    // Inventory items — same freeze rule (once here, stay put).
+    // Inventory items — always refresh so current_balance tracks the
+    // tracker's live stock levels after each stock-in / stock-out.
+    // Rows deleted in tracker are preserved here (upsert, never DELETE).
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
       const rows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
-      result.inventory_new = await insertOnlyBatch(rows, 'tracker_inventory_items');
-      result.inventory     = rows.length;
+      result.inventory_refreshed = await inventoryUpsertBatch(rows);
+      result.inventory           = rows.length;
     } catch (e) { result.inventory_error = e.message; }
-    result.mode = 'freeze (delivered jobs only, insert-if-new)';
+    result.mode = 'jobs frozen, inventory refreshed';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
