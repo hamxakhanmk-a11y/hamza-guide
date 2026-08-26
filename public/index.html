@@ -1554,7 +1554,7 @@
   .hg-sales-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
   .hg-sales-table thead th {
     position: sticky; top: 0; z-index: 3;
-    background: var(--bg2); color: var(--text);
+    background: var(--bg2); color: #0d0d0d;
     padding: 9px 10px; text-align: left; font-size: 10px;
     text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
     border-bottom: 1px solid var(--border); white-space: nowrap;
@@ -1564,7 +1564,7 @@
   .hg-sales-table tfoot td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .hg-sales-table tbody td {
     padding: 7px 10px; border-bottom: 1px solid var(--border);
-    color: var(--text); vertical-align: top;
+    color: #0d0d0d; vertical-align: top;
   }
   /* Row hover — same lift + scale pattern as job / inventory cards
      so all hover feedback across the app feels identical. z-index 1
@@ -1580,7 +1580,10 @@
     z-index: 1;
   }
   .hg-sales-table tbody tr:hover td { background: rgba(163, 45, 45, 0.08); }
-  .hg-sales-table tbody tr.muted td { color: var(--text3); }
+  /* Muted rows (no MRP or delqty) — kept dark (near black) per Hamza's
+     "make it 95% black" ask, so they read easily. The em-dash in the
+     Revenue column is enough visual signal that a row didn't contribute. */
+  .hg-sales-table tbody tr.muted td { color: #0d0d0d; }
   /* Responsive: tighten the sales table on tablet and mobile.
      Horizontal scroll on the wrapper handles column overflow so
      no columns get hidden. */
