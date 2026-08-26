@@ -1412,6 +1412,60 @@
   .hg-data-table tr:hover td { background: var(--bg2); }
   .hg-data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .hg-data-empty { text-align: center; padding: 40px 20px; color: var(--text2); font-style: italic; }
+
+  /* ── Jobs card grid — mobile / tablet / desktop responsive ── */
+  .hg-filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .hg-filters .hg-search { flex: 1; min-width: 180px; }
+  .hg-select {
+    padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-size: 13px;
+    font-family: var(--font); background: var(--bg); color: var(--text);
+    min-width: 200px; cursor: pointer;
+  }
+  .hg-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(163,45,45,0.10); }
+  .hg-jobs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .hg-job-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; transition: box-shadow 0.15s ease, transform 0.15s ease;
+    display: flex; flex-direction: column; min-width: 0;
+  }
+  .hg-job-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); }
+  .hg-job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .hg-job-id  { color: var(--brand); font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
+  .hg-job-mrp {
+    color: var(--brand-dark); font-size: 11px; font-weight: 700;
+    background: var(--brand-soft); padding: 2px 9px; border-radius: 12px; white-space: nowrap;
+  }
+  .hg-job-name { font-weight: 600; font-size: 15px; color: var(--text); line-height: 1.3; word-break: break-word; }
+  .hg-job-client {
+    font-size: 11px; color: var(--brand); text-transform: uppercase;
+    letter-spacing: 0.06em; font-weight: 700; margin-top: 4px; word-break: break-word;
+  }
+  .hg-job-code { color: var(--text2); font-weight: 600; margin-left: 6px; letter-spacing: 0.02em; }
+  .hg-job-specs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+  }
+  .hg-spec { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .hg-spec-key {
+    color: var(--text2); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.06em; font-weight: 700;
+  }
+  .hg-spec-val { color: var(--text); font-size: 12px; word-break: break-word; }
+  .hg-spec.wide { grid-column: 1 / -1; }
+  @media (max-width: 900px) {
+    .hg-data-pane { padding: 14px 12px; }
+    .hg-jobs-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  }
+  @media (max-width: 560px) {
+    .hg-jobs-grid { grid-template-columns: 1fr; gap: 10px; }
+    .hg-job-card  { padding: 12px 13px; }
+    .hg-job-name  { font-size: 14px; }
+    .hg-filters   { gap: 8px; }
+    .hg-filters .hg-search,
+    .hg-select    { min-width: 0; width: 100%; }
+    .hg-data-head { gap: 8px; }
+  }
 </style>
 
 <div id="hg-content" class="hg-main">
@@ -1425,15 +1479,22 @@
       </span>
     </div>
   </div>
-  <!-- Jobs list — full table of every synced job (307+ rows). -->
+  <!-- Jobs — responsive card grid. Fields per card: Job No, Name,
+       Company, Code, Paper, Coatings, Machine, MRP, Ups, Color.
+       Grid auto-flows: 1-col on mobile, 2 on tablet, 3-4 on desktop. -->
   <div id="hg-jobs-list-pane" class="hg-data-pane" style="display:none;">
     <div class="hg-data-head">
       <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
         &#128209; Jobs <span id="hg-jobs-count" class="hg-count-pill">0</span>
       </div>
-      <input id="hg-jobs-search" class="hg-search" placeholder="Search name, client, code, paper&hellip;" oninput="hgRenderJobsList()">
     </div>
-    <div class="hg-data-scroll"><table id="hg-jobs-table" class="hg-data-table"></table></div>
+    <div class="hg-filters">
+      <input id="hg-jobs-search"  class="hg-search"  placeholder="Search name, code, machine&hellip;" oninput="hgRenderJobsList()">
+      <select id="hg-jobs-company" class="hg-select" onchange="hgRenderJobsList()">
+        <option value="">All companies</option>
+      </select>
+    </div>
+    <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
   </div>
   <!-- Inventory list — full table of every synced inventory item. -->
   <div id="hg-inventory-pane" class="hg-data-pane" style="display:none;">
@@ -12045,53 +12106,84 @@ function _hgEsc(v) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// Fetch (once, then cached) and render the full jobs table. Search box
-// filters locally so typing is instant.
+// Fetch (once, cached) and render the Jobs card grid. Live-filters
+// against the search box + company dropdown; both re-render locally
+// without a re-fetch. Fields on each card: Job No, Name, Company,
+// Code, Paper, Coatings, Machine, MRP, Ups, Color.
 async function hgRenderJobsList() {
-  const table = document.getElementById('hg-jobs-table');
+  const grid  = document.getElementById('hg-jobs-grid');
   const count = document.getElementById('hg-jobs-count');
-  if (!table) return;
+  const compSel = document.getElementById('hg-jobs-company');
+  if (!grid) return;
   if (!__hgJobsCache) {
-    table.innerHTML = '<tr><td class="hg-data-empty">Loading jobs&hellip;</td></tr>';
+    grid.innerHTML = '<div class="hg-data-empty">Loading jobs&hellip;</div>';
     try {
       const res = await fetch('/api/jobs');
       __hgJobsCache = await res.json();
     } catch (e) {
-      table.innerHTML = `<tr><td class="hg-data-empty">Error: ${_hgEsc(e.message)}</td></tr>`;
+      grid.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
       return;
     }
+    // First render: fill the company dropdown from unique clients.
+    if (compSel) {
+      const seen = new Set();
+      const companies = [];
+      for (const j of __hgJobsCache) {
+        const c = (j.client || '').trim();
+        if (c && !seen.has(c.toLowerCase())) { seen.add(c.toLowerCase()); companies.push(c); }
+      }
+      companies.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      const keep = compSel.value;
+      compSel.innerHTML = '<option value="">All companies</option>' +
+        companies.map(c => `<option value="${_hgEsc(c)}">${_hgEsc(c)}</option>`).join('');
+      compSel.value = keep;
+    }
   }
-  const q = ((document.getElementById('hg-jobs-search') || {}).value || '').trim().toLowerCase();
-  const rows = q ? __hgJobsCache.filter(j => {
-    const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''}`.toLowerCase();
-    return hay.includes(q);
-  }) : __hgJobsCache;
-  if (count) count.textContent = q ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
+  const q     = ((document.getElementById('hg-jobs-search') || {}).value || '').trim().toLowerCase();
+  const comp  = ((compSel || {}).value || '').trim().toLowerCase();
+  const rows  = __hgJobsCache.filter(j => {
+    if (comp && (j.client || '').trim().toLowerCase() !== comp) return false;
+    if (q) {
+      const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''} ${j.mrp||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  if (count) count.textContent = (q || comp) ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
   if (!rows.length) {
-    table.innerHTML = '<tr><td class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</td></tr>';
+    grid.innerHTML = '<div class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</div>';
     return;
   }
-  const head = `
-    <thead><tr>
-      <th>ID</th><th>Name</th><th>Client</th><th>Code</th>
-      <th>Paper</th><th>Size</th><th class="num">Ups</th>
-      <th>Machine</th><th>Coatings</th><th>Date</th><th>Deadline</th>
-    </tr></thead>`;
-  const body = rows.map(j => `
-    <tr>
-      <td class="num">${_hgEsc(j.id)}</td>
-      <td>${_hgEsc(j.name)}</td>
-      <td>${_hgEsc(j.client)}</td>
-      <td>${_hgEsc(j.jobcode)}</td>
-      <td>${_hgEsc(j.paper)}</td>
-      <td>${_hgEsc(j.size)}</td>
-      <td class="num">${_hgEsc(j.ups)}</td>
-      <td>${_hgEsc(j.machine)}</td>
-      <td>${_hgEsc(Array.isArray(j.coatings) ? j.coatings.join(', ') : (j.coatings || ''))}</td>
-      <td>${_hgEsc(j.dateissued || (j.created_at ? String(j.created_at).slice(0,10) : ''))}</td>
-      <td>${_hgEsc(j.deadline)}</td>
-    </tr>`).join('');
-  table.innerHTML = head + '<tbody>' + body + '</tbody>';
+  // Best-effort "Color" extraction. The tracker's schema doesn't carry
+  // a single color column; try a few likely spots in particulars.
+  const pickColor = (j) => {
+    if (j.color) return j.color;
+    const p = j.particulars || {};
+    return p.color || p.colour || p.ink || p.inks || p.colors || '';
+  };
+  grid.innerHTML = rows.map(j => {
+    const coatings = Array.isArray(j.coatings) ? j.coatings.filter(Boolean).join(', ') : (j.coatings || '');
+    const color    = pickColor(j);
+    const paper    = j.paper || j.size || '';
+    const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
+    return `
+      <div class="hg-job-card">
+        <div class="hg-job-head">
+          <span class="hg-job-id">#${_hgEsc(j.id)}</span>
+          ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
+        </div>
+        <div class="hg-job-name">${_hgEsc(j.name)}</div>
+        <div class="hg-job-client">${_hgEsc(j.client)}${codeChip}</div>
+        <div class="hg-job-specs">
+          <div class="hg-spec"><span class="hg-spec-key">Paper</span><span class="hg-spec-val">${_hgEsc(paper) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Machine</span><span class="hg-spec-val">${_hgEsc(j.machine) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Ups</span><span class="hg-spec-val">${_hgEsc(j.ups) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Color</span><span class="hg-spec-val">${_hgEsc(color) || '&mdash;'}</span></div>
+          ${coatings ? `<div class="hg-spec wide"><span class="hg-spec-key">Coatings</span><span class="hg-spec-val">${_hgEsc(coatings)}</span></div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // Same shape for inventory items.
