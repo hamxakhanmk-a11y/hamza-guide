@@ -1566,7 +1566,20 @@
     padding: 7px 10px; border-bottom: 1px solid var(--border);
     color: var(--text); vertical-align: top;
   }
-  .hg-sales-table tbody tr:hover td { background: rgba(163, 45, 45, 0.07); }
+  /* Row hover — same lift + scale pattern as job / inventory cards
+     so all hover feedback across the app feels identical. z-index 1
+     keeps the hovered row above its neighbors but below the sticky
+     header (z:3) and sticky total row (z:2). */
+  .hg-sales-table tbody tr {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+  .hg-sales-table tbody tr:hover {
+    transform: scale(1.008);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+    position: relative;
+    z-index: 1;
+  }
+  .hg-sales-table tbody tr:hover td { background: rgba(163, 45, 45, 0.08); }
   .hg-sales-table tbody tr.muted td { color: var(--text3); }
   /* Responsive: tighten the sales table on tablet and mobile.
      Horizontal scroll on the wrapper handles column overflow so
