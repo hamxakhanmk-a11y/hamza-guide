@@ -832,15 +832,17 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
   try {
     await dbReady;
     const sql = getDb();
-    // Prefer the synced tracker mirror when it has data — that's the whole
-    // point of Hamza Guide's Option-B copy-on-my-side pipeline. Falls back
-    // to the (empty) local jobs table if nothing has been synced yet.
+    // Hamza Guide only reads the tracker_jobs mirror — never the local
+    // (empty, unused) jobs table. If the mirror doesn't exist yet, return
+    // an empty list so a first-run page load stays clean. This is what
+    // guarantees synced jobs stay put across refreshes: they live in the
+    // mirror on Neon's disk, always.
     try {
-      const mirror = await sql`SELECT data FROM tracker_jobs ORDER BY id ASC`;
-      if (mirror.length > 0) return res.json(mirror.map(r => r.data));
-    } catch (_) { /* table not created yet — first-run before any sync */ }
-    const jobs = await sql`SELECT * FROM jobs WHERE deleted_at IS NULL ORDER BY id ASC`;
-    res.json(jobs);
+      const mirror = await sql`SELECT data FROM tracker_jobs ORDER BY id DESC`;
+      return res.json(mirror.map(r => r.data));
+    } catch (_) {
+      return res.json([]);
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -869,47 +871,45 @@ async function syncTrackerHandler(req, res) {
   const result  = { ok: true, mode: 'upsert (no deletions — safe archive)', synced_at: new Date().toISOString() };
   try {
     await dbReady;
-    // Table map: tracker source table → local mirror name.
-    // The tracker's inventory table is actually named `inventory_items`
-    // (a SELECT * FROM inventory throws — that was the earlier gap).
-    const MIRRORS = [
-      { src: 'jobs',            dst: 'tracker_jobs',            key: 'jobs' },
-      { src: 'inventory_items', dst: 'tracker_inventory_items', key: 'inventory' },
-    ];
-    // Each mirror stores id + data + synced_at. Rows only ever go in or
-    // update in place; nothing gets removed.
-    for (const m of MIRRORS) {
-      try {
-        if (m.dst === 'tracker_jobs') {
-          await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-        } else if (m.dst === 'tracker_inventory_items') {
-          await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-        }
-        let rows;
-        if (m.src === 'jobs') {
-          rows = await tracker`SELECT * FROM jobs ORDER BY id`;
-          for (const r of rows) {
-            await local`
-              INSERT INTO tracker_jobs (id, data, synced_at)
-              VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
-            `;
-          }
-        } else if (m.src === 'inventory_items') {
-          rows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
-          for (const r of rows) {
-            await local`
-              INSERT INTO tracker_inventory_items (id, data, synced_at)
-              VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
-            `;
-          }
-        }
-        result[m.key] = rows.length;
-      } catch (e) {
-        result[m.key + '_error'] = e.message;
+    // Incremental sync: only pull rows whose id is greater than the
+    // largest id already sitting in our mirror. First sync = full
+    // (max is 0). Subsequent syncs = just the new rows → fast.
+    // Set ?full=1 on the request URL to force a re-fetch of every row
+    // (useful when the tracker has updated older jobs in place).
+    const forceFull = req.query && (req.query.full === '1' || req.query.full === 'true');
+    // Jobs
+    try {
+      await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      const [m] = forceFull ? [{ max: 0 }] : await local`SELECT COALESCE(MAX(id), 0)::int AS max FROM tracker_jobs`;
+      const since = m?.max ?? 0;
+      const rows = await tracker`SELECT * FROM jobs WHERE id > ${since} ORDER BY id`;
+      for (const r of rows) {
+        await local`
+          INSERT INTO tracker_jobs (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+        `;
       }
-    }
+      result.jobs         = rows.length;   // new rows pulled this run
+      result.jobs_since   = since;
+    } catch (e) { result.jobs_error = e.message; }
+    // Inventory items
+    try {
+      await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      const [m] = forceFull ? [{ max: 0 }] : await local`SELECT COALESCE(MAX(id), 0)::int AS max FROM tracker_inventory_items`;
+      const since = m?.max ?? 0;
+      const rows = await tracker`SELECT * FROM inventory_items WHERE id > ${since} ORDER BY id`;
+      for (const r of rows) {
+        await local`
+          INSERT INTO tracker_inventory_items (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+        `;
+      }
+      result.inventory       = rows.length;
+      result.inventory_since = since;
+    } catch (e) { result.inventory_error = e.message; }
+    result.mode = forceFull ? 'full re-sync (upsert)' : 'incremental (id > last_synced)';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
@@ -1260,14 +1260,17 @@ app.get('/api/inventory', requireAuth, async (req, res) => {
   try {
     await dbReady;
     const sql = getDb();
-    // Prefer the synced tracker mirror when it has rows — same Option-B
-    // pattern as /api/jobs. Falls back to the local inventory table only
-    // when nothing has been synced yet. Mirror name matches the tracker's
-    // actual table (inventory_items, not inventory).
+    // Read exclusively from the tracker_inventory_items mirror — same
+    // rule as /api/jobs. If the mirror doesn't exist yet, return empty
+    // instead of falling through to schema-dependent tracker queries.
     try {
       const mirror = await sql`SELECT data FROM tracker_inventory_items ORDER BY id ASC`;
-      if (mirror.length > 0) return res.json(mirror.map(r => r.data));
-    } catch (_) { /* mirror table not created yet — fall through */ }
+      return res.json(mirror.map(r => r.data));
+    } catch (_) {
+      return res.json([]);
+    }
+    // Legacy tracker code below is unreachable now — kept to avoid a
+    // giant diff; will be pruned when we strip more tracker dead weight.
     // Also attach the most recent stock-in and stock-out per item so the
     // inventory cards can show small green "+N" and red "-N" pills at a
     // glance. Subqueries are scoped to one item_id each (the per-item index

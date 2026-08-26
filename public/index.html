@@ -1168,8 +1168,9 @@
       <button class="mode-btn"        id="hg-tab-job"   onclick="hgShowTab('job')">&#128203; Job (PO)</button>
       <button class="mode-btn active" id="hg-tab-paper" onclick="hgShowTab('paper')">&#129518; Paper</button>
       <button class="mode-btn"        id="hg-tab-color" onclick="hgShowTab('color')">&#127912; Color</button>
-      <button class="mode-btn"        id="hg-tab-jobs"  onclick="hgShowTab('jobs')">&#128209; Jobs</button>
-      <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
+      <button class="mode-btn"        id="hg-tab-jobs"      onclick="hgShowTab('jobs')">&#128209; Jobs</button>
+      <button class="mode-btn"        id="hg-tab-inventory" onclick="hgShowTab('inventory')">&#128230; Inventory</button>
+      <button class="mode-btn"        id="hg-tab-inbox"     onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
     </div>
   </div>
   <div class="hero-mark">
@@ -1371,25 +1372,78 @@
   }
 </style>
 
+<!-- Wide-mode + data-view styles for Jobs / Inventory tables. -->
+<style>
+  .hg-main.hg-wide { max-width: 1280px; }
+  #hg-data-actions { margin-bottom: 12px; }
+  #hg-data-actions .hg-sync-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  #hg-sync-btn { background: var(--brand); color: #fff; border: none;
+    padding: 8px 14px; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: var(--font); }
+  #hg-sync-btn:hover { background: var(--brand-dark); }
+  #hg-sync-full { background: transparent; color: var(--text2); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; font-family: var(--font); }
+  #hg-sync-full:hover { background: var(--bg2); color: var(--text); }
+  .hg-data-pane { background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .hg-data-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  .hg-data-head .hg-title { margin: 0; }
+  .hg-count-pill { background: var(--bg2); color: var(--text2); font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: 12px; letter-spacing: 0.03em; }
+  .hg-search { flex: 1; min-width: 200px; padding: 8px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 13px; font-family: var(--font); background: var(--bg); color: var(--text); }
+  .hg-search:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(163,45,45,0.10); }
+  .hg-data-scroll { overflow: auto; max-height: calc(100vh - 280px);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .hg-data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .hg-data-table th { background: var(--bg2); color: var(--text); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px;
+    padding: 8px 10px; text-align: left; position: sticky; top: 0; z-index: 1;
+    border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .hg-data-table td { padding: 7px 10px; border-bottom: 1px solid var(--border);
+    color: var(--text); white-space: nowrap; vertical-align: top; }
+  .hg-data-table tr:hover td { background: var(--bg2); }
+  .hg-data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .hg-data-empty { text-align: center; padding: 40px 20px; color: var(--text2); font-style: italic; }
+</style>
+
 <div id="hg-content" class="hg-main">
-  <!-- Jobs-tab action bar: sync from Tracker + status line. Only visible
-       while the Jobs tab is active (hgShowTab toggles it). -->
-  <div id="hg-jobs-actions" style="display:none; margin-bottom:12px;">
-    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-                background:var(--bg); border:1px solid var(--border);
-                border-radius:var(--radius); padding:10px 14px;
-                box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-      <button id="hg-sync-btn" onclick="hgSyncTracker()"
-              style="background:var(--brand); color:#fff; border:none;
-                     padding:8px 14px; border-radius:var(--radius-sm);
-                     font-size:13px; font-weight:600; cursor:pointer;
-                     font-family:var(--font);">
-        &#128260; Sync from Tracker
-      </button>
+  <!-- Sync action bar. Visible only on Jobs and Inventory tabs. -->
+  <div id="hg-data-actions" style="display:none;">
+    <div class="hg-sync-row">
+      <button id="hg-sync-btn" onclick="hgSyncTracker(false)">&#128260; Sync from Tracker</button>
+      <button id="hg-sync-full" onclick="hgSyncTracker(true)" title="Re-fetch every row from the tracker (slower — catches updates to existing rows)">Force full re-sync</button>
       <span id="hg-sync-status" style="font-size:12px; color:var(--text2);">
-        Pull the latest jobs from the tracker&rsquo;s database.
+        Incremental sync &mdash; only pulls new rows since the last sync.
       </span>
     </div>
+  </div>
+  <!-- Jobs list — full table of every synced job (307+ rows). -->
+  <div id="hg-jobs-list-pane" class="hg-data-pane" style="display:none;">
+    <div class="hg-data-head">
+      <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+        &#128209; Jobs <span id="hg-jobs-count" class="hg-count-pill">0</span>
+      </div>
+      <input id="hg-jobs-search" class="hg-search" placeholder="Search name, client, code, paper&hellip;" oninput="hgRenderJobsList()">
+    </div>
+    <div class="hg-data-scroll"><table id="hg-jobs-table" class="hg-data-table"></table></div>
+  </div>
+  <!-- Inventory list — full table of every synced inventory item. -->
+  <div id="hg-inventory-pane" class="hg-data-pane" style="display:none;">
+    <div class="hg-data-head">
+      <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+        &#128230; Inventory <span id="hg-inventory-count" class="hg-count-pill">0</span>
+      </div>
+      <input id="hg-inventory-search" class="hg-search" placeholder="Search paper, brand, size&hellip;" oninput="hgRenderInventoryList()">
+    </div>
+    <div class="hg-data-scroll"><table id="hg-inventory-table" class="hg-data-table"></table></div>
   </div>
   <div id="hg-inbox-pane" class="hg-card" style="display:none;">
     <div class="hg-title">&#9993;&#65039; Inbox</div>
@@ -11954,37 +12008,156 @@ init();
 // from the tracker DB once wired). Color = dedicated Lab measurement
 // screen. Inbox = coming-soon placeholder.
 function hgShowTab(name) {
-  ['job','paper','color','jobs','inbox'].forEach(t => {
+  ['job','paper','color','jobs','inventory','inbox'].forEach(t => {
     const btn = document.getElementById('hg-tab-' + t);
     if (btn) btn.classList.toggle('active', t === name);
   });
   const inboxPane = document.getElementById('hg-inbox-pane');
   const colorPane = document.getElementById('hg-color-pane');
-  const jobsBar   = document.getElementById('hg-jobs-actions');
-  if (inboxPane) inboxPane.style.display = (name === 'inbox') ? 'block' : 'none';
-  if (colorPane) colorPane.style.display = (name === 'color') ? 'block' : 'none';
-  if (jobsBar)   jobsBar.style.display   = (name === 'jobs')  ? 'block' : 'none';
+  const jobsList  = document.getElementById('hg-jobs-list-pane');
+  const invPane   = document.getElementById('hg-inventory-pane');
+  const dataBar   = document.getElementById('hg-data-actions');
+  const content   = document.getElementById('hg-content');
+  const isData    = (name === 'jobs' || name === 'inventory');
+  if (inboxPane) inboxPane.style.display = (name === 'inbox')     ? 'block' : 'none';
+  if (colorPane) colorPane.style.display = (name === 'color')     ? 'block' : 'none';
+  if (jobsList)  jobsList.style.display  = (name === 'jobs')      ? 'block' : 'none';
+  if (invPane)   invPane.style.display   = (name === 'inventory') ? 'block' : 'none';
+  if (dataBar)   dataBar.style.display   = isData ? 'block' : 'none';
+  if (content)   content.classList.toggle('hg-wide', isData);
   if (name === 'color') colorShowView('lab');
-  if (name === 'job'   && typeof openCalculatorJobMode     === 'function') openCalculatorJobMode();
-  else if (name === 'paper' && typeof openCalculator            === 'function') openCalculator();
-  else if (name === 'jobs'  && typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
+  if      (name === 'job'       && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
+  else if (name === 'paper'     && typeof openCalculator        === 'function') openCalculator();
+  else if (name === 'jobs'     ) { if (typeof closeCalculator === 'function') closeCalculator(); hgRenderJobsList(); }
+  else if (name === 'inventory') { if (typeof closeCalculator === 'function') closeCalculator(); hgRenderInventoryList(); }
   else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
 }
 
-// Sync tracker jobs into Hamza Guide's own DB. On success, reload the
-// in-memory jobs array and re-render the Jobs pane so results appear
-// without a page refresh.
-async function hgSyncTracker() {
+// ── Data caches for the Jobs / Inventory tabs ──────────────────
+// Fetched once per tab open, then re-filtered locally on every keystroke.
+// Sync events reset them so the next tab open picks up new rows.
+let __hgJobsCache = null;
+let __hgInvCache  = null;
+
+function _hgEsc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Fetch (once, then cached) and render the full jobs table. Search box
+// filters locally so typing is instant.
+async function hgRenderJobsList() {
+  const table = document.getElementById('hg-jobs-table');
+  const count = document.getElementById('hg-jobs-count');
+  if (!table) return;
+  if (!__hgJobsCache) {
+    table.innerHTML = '<tr><td class="hg-data-empty">Loading jobs&hellip;</td></tr>';
+    try {
+      const res = await fetch('/api/jobs');
+      __hgJobsCache = await res.json();
+    } catch (e) {
+      table.innerHTML = `<tr><td class="hg-data-empty">Error: ${_hgEsc(e.message)}</td></tr>`;
+      return;
+    }
+  }
+  const q = ((document.getElementById('hg-jobs-search') || {}).value || '').trim().toLowerCase();
+  const rows = q ? __hgJobsCache.filter(j => {
+    const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''}`.toLowerCase();
+    return hay.includes(q);
+  }) : __hgJobsCache;
+  if (count) count.textContent = q ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
+  if (!rows.length) {
+    table.innerHTML = '<tr><td class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</td></tr>';
+    return;
+  }
+  const head = `
+    <thead><tr>
+      <th>ID</th><th>Name</th><th>Client</th><th>Code</th>
+      <th>Paper</th><th>Size</th><th class="num">Ups</th>
+      <th>Machine</th><th>Coatings</th><th>Date</th><th>Deadline</th>
+    </tr></thead>`;
+  const body = rows.map(j => `
+    <tr>
+      <td class="num">${_hgEsc(j.id)}</td>
+      <td>${_hgEsc(j.name)}</td>
+      <td>${_hgEsc(j.client)}</td>
+      <td>${_hgEsc(j.jobcode)}</td>
+      <td>${_hgEsc(j.paper)}</td>
+      <td>${_hgEsc(j.size)}</td>
+      <td class="num">${_hgEsc(j.ups)}</td>
+      <td>${_hgEsc(j.machine)}</td>
+      <td>${_hgEsc(Array.isArray(j.coatings) ? j.coatings.join(', ') : (j.coatings || ''))}</td>
+      <td>${_hgEsc(j.dateissued || (j.created_at ? String(j.created_at).slice(0,10) : ''))}</td>
+      <td>${_hgEsc(j.deadline)}</td>
+    </tr>`).join('');
+  table.innerHTML = head + '<tbody>' + body + '</tbody>';
+}
+
+// Same shape for inventory items.
+async function hgRenderInventoryList() {
+  const table = document.getElementById('hg-inventory-table');
+  const count = document.getElementById('hg-inventory-count');
+  if (!table) return;
+  if (!__hgInvCache) {
+    table.innerHTML = '<tr><td class="hg-data-empty">Loading inventory&hellip;</td></tr>';
+    try {
+      const res = await fetch('/api/inventory');
+      __hgInvCache = await res.json();
+    } catch (e) {
+      table.innerHTML = `<tr><td class="hg-data-empty">Error: ${_hgEsc(e.message)}</td></tr>`;
+      return;
+    }
+  }
+  const q = ((document.getElementById('hg-inventory-search') || {}).value || '').trim().toLowerCase();
+  const rows = q ? __hgInvCache.filter(i => {
+    const hay = `${i.paper_type||''} ${i.brand||''} ${i.size||''} ${i.gsm||''} ${i.supplier||''}`.toLowerCase();
+    return hay.includes(q);
+  }) : __hgInvCache;
+  if (count) count.textContent = q ? `${rows.length} of ${__hgInvCache.length}` : `${__hgInvCache.length}`;
+  if (!rows.length) {
+    table.innerHTML = '<tr><td class="hg-data-empty">' + (__hgInvCache.length ? 'No matches.' : 'No inventory synced yet. Click <b>Sync from Tracker</b> above.') + '</td></tr>';
+    return;
+  }
+  const head = `
+    <thead><tr>
+      <th>ID</th><th>Paper Type</th><th>Brand</th><th>Size</th>
+      <th>GSM</th><th class="num">Balance</th><th class="num">Reorder</th>
+      <th>Offcut?</th><th>Supplier</th>
+    </tr></thead>`;
+  const body = rows.map(i => `
+    <tr>
+      <td class="num">${_hgEsc(i.id)}</td>
+      <td>${_hgEsc(i.paper_type)}</td>
+      <td>${_hgEsc(i.brand)}</td>
+      <td>${_hgEsc(i.size)}</td>
+      <td>${_hgEsc(i.gsm)}</td>
+      <td class="num">${_hgEsc(i.current_balance)}</td>
+      <td class="num">${_hgEsc(i.reorder_threshold)}</td>
+      <td>${i.is_offcut ? 'Yes' : ''}</td>
+      <td>${_hgEsc(i.supplier)}</td>
+    </tr>`).join('');
+  table.innerHTML = head + '<tbody>' + body + '</tbody>';
+}
+
+// Sync tracker jobs + inventory into Hamza Guide's own DB. Incremental
+// by default (only rows with id > local_max are pulled — fast). Pass
+// forceFull=true to re-fetch every row (catches in-place updates).
+// On success, cache-bust the Jobs / Inventory tables and re-render
+// whichever tab is currently open.
+async function hgSyncTracker(forceFull) {
   const btn    = document.getElementById('hg-sync-btn');
+  const full   = document.getElementById('hg-sync-full');
   const status = document.getElementById('hg-sync-status');
   if (!btn || !status) return;
   const prevLabel = btn.textContent;
-  btn.disabled = true;
+  btn.disabled = true; if (full) full.disabled = true;
   btn.style.opacity = '0.7';
-  btn.textContent = 'Syncing…';
-  status.textContent = 'Pulling from tracker…';
+  btn.textContent = forceFull ? 'Full re-sync…' : 'Syncing…';
+  status.textContent = forceFull ? 'Re-fetching every row from tracker…' : 'Pulling new rows since last sync…';
   try {
-    const res = await fetch('/api/sync-tracker', { method: 'POST' });
+    const url = '/api/sync-tracker' + (forceFull ? '?full=1' : '');
+    const res = await fetch(url, { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
     // Build a status line that answers "did I pick up everything?"
@@ -12008,17 +12181,29 @@ async function hgSyncTracker() {
     if (data.jobs_error)      errs.push('jobs: ' + data.jobs_error);
     if (data.inventory_error) errs.push('inventory: ' + data.inventory_error);
     const errText = errs.length ? ' · ' + errs.join(' | ') : '';
-    status.textContent = `${check} ${label}${detail} · ${new Date().toLocaleTimeString()}${errText}`;
+    const newBits = [];
+    if (data.jobs      != null) newBits.push(`${data.jobs} new jobs`);
+    if (data.inventory != null) newBits.push(`${data.inventory} new inventory`);
+    const newSummary = newBits.length ? `${newBits.join(' + ')} · ` : '';
+    status.textContent = `${check} ${newSummary}${label}${detail} · ${new Date().toLocaleTimeString()}${errText}`;
     status.style.color = data.complete ? '#166534' : '#A32D2D';
     setTimeout(() => { status.style.color = 'var(--text2)'; }, 12000);
-    if (typeof loadJobs === 'function') { try { await loadJobs(); } catch (_) {} }
-    if (typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
+    // Bust the local caches so the tables re-fetch on next render, then
+    // re-render whichever data tab is currently open.
+    __hgJobsCache = null;
+    __hgInvCache  = null;
+    const jobsPaneOpen = document.getElementById('hg-jobs-list-pane')?.style.display === 'block';
+    const invPaneOpen  = document.getElementById('hg-inventory-pane')?.style.display === 'block';
+    if (jobsPaneOpen) hgRenderJobsList();
+    if (invPaneOpen)  hgRenderInventoryList();
   } catch (e) {
     status.textContent = 'Error: ' + (e.message || 'sync failed');
     status.style.color = '#A32D2D';
     setTimeout(() => { status.style.color = 'var(--text2)'; }, 4000);
   } finally {
     btn.disabled = false;
+    const full2 = document.getElementById('hg-sync-full');
+    if (full2) full2.disabled = false;
     btn.style.opacity = '';
     btn.textContent = prevLabel;
   }
