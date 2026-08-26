@@ -12003,9 +12003,14 @@ async function hgSyncTracker() {
     }
     const detail = parts.length ? ' — ' + parts.join(', ') : '';
     const label  = data.complete ? 'All data captured' : 'Sync ran with a gap';
-    status.textContent = `${check} ${label}${detail} · ${new Date().toLocaleTimeString()}`;
+    // If a source table errored, surface why so we don't have to guess.
+    const errs = [];
+    if (data.jobs_error)      errs.push('jobs: ' + data.jobs_error);
+    if (data.inventory_error) errs.push('inventory: ' + data.inventory_error);
+    const errText = errs.length ? ' · ' + errs.join(' | ') : '';
+    status.textContent = `${check} ${label}${detail} · ${new Date().toLocaleTimeString()}${errText}`;
     status.style.color = data.complete ? '#166534' : '#A32D2D';
-    setTimeout(() => { status.style.color = 'var(--text2)'; }, 8000);
+    setTimeout(() => { status.style.color = 'var(--text2)'; }, 12000);
     if (typeof loadJobs === 'function') { try { await loadJobs(); } catch (_) {} }
     if (typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
   } catch (e) {

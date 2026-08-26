@@ -869,56 +869,53 @@ async function syncTrackerHandler(req, res) {
   const result  = { ok: true, mode: 'upsert (no deletions — safe archive)', synced_at: new Date().toISOString() };
   try {
     await dbReady;
+    // Table map: tracker source table → local mirror name.
+    // The tracker's inventory table is actually named `inventory_items`
+    // (a SELECT * FROM inventory throws — that was the earlier gap).
+    const MIRRORS = [
+      { src: 'jobs',            dst: 'tracker_jobs',            key: 'jobs' },
+      { src: 'inventory_items', dst: 'tracker_inventory_items', key: 'inventory' },
+    ];
     // Each mirror stores id + data + synced_at. Rows only ever go in or
     // update in place; nothing gets removed.
-    async function ensureMirror(name) {
-      if (name === 'jobs') {
-        await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      } else if (name === 'inventory') {
-        await local`CREATE TABLE IF NOT EXISTS tracker_inventory (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+    for (const m of MIRRORS) {
+      try {
+        if (m.dst === 'tracker_jobs') {
+          await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+        } else if (m.dst === 'tracker_inventory_items') {
+          await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+        }
+        let rows;
+        if (m.src === 'jobs') {
+          rows = await tracker`SELECT * FROM jobs ORDER BY id`;
+          for (const r of rows) {
+            await local`
+              INSERT INTO tracker_jobs (id, data, synced_at)
+              VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+            `;
+          }
+        } else if (m.src === 'inventory_items') {
+          rows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
+          for (const r of rows) {
+            await local`
+              INSERT INTO tracker_inventory_items (id, data, synced_at)
+              VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+              ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+            `;
+          }
+        }
+        result[m.key] = rows.length;
+      } catch (e) {
+        result[m.key + '_error'] = e.message;
       }
     }
-    // --- jobs ---
-    try {
-      await ensureMirror('jobs');
-      const rows = await tracker`SELECT * FROM jobs ORDER BY id`;
-      for (const r of rows) {
-        await local`
-          INSERT INTO tracker_jobs (id, data, synced_at)
-          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
-        `;
-      }
-      result.jobs = rows.length;
-    } catch (e) { result.jobs_error = e.message; }
-    // --- inventory ---
-    try {
-      await ensureMirror('inventory');
-      const rows = await tracker`SELECT * FROM inventory ORDER BY id`;
-      for (const r of rows) {
-        await local`
-          INSERT INTO tracker_inventory (id, data, synced_at)
-          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
-        `;
-      }
-      result.inventory = rows.length;
-    } catch (e) { result.inventory_error = e.message; }
-    // Report archive totals so the caller (button or cron log) can see how
-    // big the safe-point copy is right now. Also read the tracker's live
-    // totals to sanity-check we got everything on this run.
-    try {
-      const [jobsCount]      = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;
-      const [inventoryCount] = await local`SELECT COUNT(*)::int AS n FROM tracker_inventory`;
-      result.archive_jobs      = jobsCount?.n ?? 0;
-      result.archive_inventory = inventoryCount?.n ?? 0;
-    } catch (_) {}
-    try {
-      const [tj] = await tracker`SELECT COUNT(*)::int AS n FROM jobs`;
-      const [ti] = await tracker`SELECT COUNT(*)::int AS n FROM inventory`;
-      result.tracker_jobs      = tj?.n ?? 0;
-      result.tracker_inventory = ti?.n ?? 0;
-    } catch (_) {}
+    // Read archive + tracker totals in isolated try/catch blocks so a
+    // failure on one query never wipes out the count of another.
+    try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
+    try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_inventory_items`; result.archive_inventory = n?.n ?? 0; } catch (_) {}
+    try { const [n] = await tracker`SELECT COUNT(*)::int AS n FROM jobs`;                   result.tracker_jobs      = n?.n ?? 0; } catch (_) {}
+    try { const [n] = await tracker`SELECT COUNT(*)::int AS n FROM inventory_items`;        result.tracker_inventory = n?.n ?? 0; } catch (_) {}
     // Complete = the mirror holds AT LEAST every row that's currently in
     // tracker. Archive is allowed to exceed tracker (rows tracker has
     // since deleted are still preserved on our side).
@@ -1265,9 +1262,10 @@ app.get('/api/inventory', requireAuth, async (req, res) => {
     const sql = getDb();
     // Prefer the synced tracker mirror when it has rows — same Option-B
     // pattern as /api/jobs. Falls back to the local inventory table only
-    // when nothing has been synced yet.
+    // when nothing has been synced yet. Mirror name matches the tracker's
+    // actual table (inventory_items, not inventory).
     try {
-      const mirror = await sql`SELECT data FROM tracker_inventory ORDER BY id ASC`;
+      const mirror = await sql`SELECT data FROM tracker_inventory_items ORDER BY id ASC`;
       if (mirror.length > 0) return res.json(mirror.map(r => r.data));
     } catch (_) { /* mirror table not created yet — fall through */ }
     // Also attach the most recent stock-in and stock-out per item so the
