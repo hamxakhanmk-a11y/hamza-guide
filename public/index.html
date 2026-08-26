@@ -1484,12 +1484,9 @@
      via .hg-jobs-grid + .hg-job-card so mobile layout is identical.
      .hg-static-card removes the pointer/hover-lift since inv items
      aren't editable (yet). */
+  /* Inventory tiles keep the same hover animation as job tiles;
+     only the cursor stays default since they aren't clickable yet. */
   .hg-job-card.hg-static-card { cursor: default; }
-  .hg-job-card.hg-static-card:hover {
-    transform: none;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    border-color: var(--border);
-  }
   .hg-inv-badge {
     display: inline-block; margin-left: 4px; padding: 2px 8px;
     font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
