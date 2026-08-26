@@ -832,10 +832,50 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
   try {
     await dbReady;
     const sql = getDb();
+    // Prefer the synced tracker mirror when it has data — that's the whole
+    // point of Hamza Guide's Option-B copy-on-my-side pipeline. Falls back
+    // to the (empty) local jobs table if nothing has been synced yet.
+    try {
+      const mirror = await sql`SELECT data FROM tracker_jobs ORDER BY id ASC`;
+      if (mirror.length > 0) return res.json(mirror.map(r => r.data));
+    } catch (_) { /* table not created yet — first-run before any sync */ }
     const jobs = await sql`SELECT * FROM jobs WHERE deleted_at IS NULL ORDER BY id ASC`;
     res.json(jobs);
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Sync from Tracker ────────────────────────────────────────
+// Pulls the tracker's jobs table over into a local tracker_jobs mirror
+// (JSON blobs, schema-agnostic so tracker schema changes don't break us).
+// READ-ONLY on the tracker side — only SELECT ever runs against it.
+// Trigger: the "Sync from Tracker" button in the Jobs tab.
+app.post('/api/sync-tracker', async (req, res) => {
+  const trackerUrl = process.env.TRACKER_DATABASE_URL;
+  if (!trackerUrl) {
+    return res.status(500).json({ error: 'TRACKER_DATABASE_URL is not set in the environment' });
+  }
+  try {
+    await dbReady;
+    const local   = getDb();
+    const tracker = neon(trackerUrl);
+    await local`
+      CREATE TABLE IF NOT EXISTS tracker_jobs (
+        id          INTEGER PRIMARY KEY,
+        data        JSONB NOT NULL,
+        synced_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+    const rows = await tracker`SELECT * FROM jobs ORDER BY id`;
+    await local`TRUNCATE tracker_jobs`;
+    for (const r of rows) {
+      await local`INSERT INTO tracker_jobs (id, data) VALUES (${r.id}, ${JSON.stringify(r)}::jsonb)`;
+    }
+    res.json({ ok: true, jobs: rows.length, synced_at: new Date().toISOString() });
+  } catch (err) {
+    console.error('Sync error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1372,6 +1372,25 @@
 </style>
 
 <div id="hg-content" class="hg-main">
+  <!-- Jobs-tab action bar: sync from Tracker + status line. Only visible
+       while the Jobs tab is active (hgShowTab toggles it). -->
+  <div id="hg-jobs-actions" style="display:none; margin-bottom:12px;">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+                background:var(--bg); border:1px solid var(--border);
+                border-radius:var(--radius); padding:10px 14px;
+                box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+      <button id="hg-sync-btn" onclick="hgSyncTracker()"
+              style="background:var(--brand); color:#fff; border:none;
+                     padding:8px 14px; border-radius:var(--radius-sm);
+                     font-size:13px; font-weight:600; cursor:pointer;
+                     font-family:var(--font);">
+        &#128260; Sync from Tracker
+      </button>
+      <span id="hg-sync-status" style="font-size:12px; color:var(--text2);">
+        Pull the latest jobs from the tracker&rsquo;s database.
+      </span>
+    </div>
+  </div>
   <div id="hg-inbox-pane" class="hg-card" style="display:none;">
     <div class="hg-title">&#9993;&#65039; Inbox</div>
     <div class="hg-sub">Read your Gmail inside Hamza Guide. <br><br><b>Coming soon</b> &mdash; needs a one-time Google Cloud setup (create a project, enable the Gmail API, add OAuth credentials). Tell me when you want to set this up and I'll walk you through it.</div>
@@ -11941,13 +11960,45 @@ function hgShowTab(name) {
   });
   const inboxPane = document.getElementById('hg-inbox-pane');
   const colorPane = document.getElementById('hg-color-pane');
+  const jobsBar   = document.getElementById('hg-jobs-actions');
   if (inboxPane) inboxPane.style.display = (name === 'inbox') ? 'block' : 'none';
   if (colorPane) colorPane.style.display = (name === 'color') ? 'block' : 'none';
+  if (jobsBar)   jobsBar.style.display   = (name === 'jobs')  ? 'block' : 'none';
   if (name === 'color') colorShowView('lab');
   if (name === 'job'   && typeof openCalculatorJobMode     === 'function') openCalculatorJobMode();
   else if (name === 'paper' && typeof openCalculator            === 'function') openCalculator();
   else if (name === 'jobs'  && typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
   else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
+}
+
+// Sync tracker jobs into Hamza Guide's own DB. On success, reload the
+// in-memory jobs array and re-render the Jobs pane so results appear
+// without a page refresh.
+async function hgSyncTracker() {
+  const btn    = document.getElementById('hg-sync-btn');
+  const status = document.getElementById('hg-sync-status');
+  if (!btn || !status) return;
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  btn.textContent = 'Syncing…';
+  status.textContent = 'Pulling from tracker…';
+  try {
+    const res = await fetch('/api/sync-tracker', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Sync failed');
+    status.textContent = `Synced ${data.jobs} jobs · ${new Date().toLocaleTimeString()}`;
+    if (typeof loadJobs === 'function') { try { await loadJobs(); } catch (_) {} }
+    if (typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
+  } catch (e) {
+    status.textContent = 'Error: ' + (e.message || 'sync failed');
+    status.style.color = '#A32D2D';
+    setTimeout(() => { status.style.color = 'var(--text2)'; }, 4000);
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.textContent = prevLabel;
+  }
 }
 
 // -- Color Measurement & Matching ------------------------------------------
