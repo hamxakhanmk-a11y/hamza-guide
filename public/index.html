@@ -1436,6 +1436,14 @@
     color: var(--brand-dark); font-size: 11px; font-weight: 700;
     background: var(--brand-soft); padding: 2px 9px; border-radius: 12px; white-space: nowrap;
   }
+  /* Tiny MIL pill next to the job number when the job is one of a
+     multi-run group (same client + same product name, N > 1). */
+  .hg-job-mil {
+    display: inline-block; margin-left: 6px;
+    background: #eab308; color: #422006;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
+    padding: 2px 6px; border-radius: 8px; vertical-align: middle;
+  }
   .hg-job-name { font-weight: 600; font-size: 15px; color: var(--text); line-height: 1.3; word-break: break-word; }
   .hg-job-client {
     font-size: 11px; color: var(--brand); text-transform: uppercase;
@@ -12174,7 +12182,18 @@ async function hgRenderJobsList() {
     }
     return true;
   });
-  if (count) count.textContent = (q || comp) ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
+  // Detect mil-group membership: same client + same normalized product
+  // name, counted across the FULL cache (not just filtered rows) so a
+  // filtered-down view still shows the MIL pill on any sibling that
+  // exists in the archive.
+  const _norm = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const groupKey = j => `${_norm(j.client)}|${_norm(j.name)}`;
+  const groupCounts = {};
+  for (const j of __hgJobsCache) {
+    const k = groupKey(j);
+    groupCounts[k] = (groupCounts[k] || 0) + 1;
+  }
+  if (count) count.textContent = (q || comp || type) ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
   if (!rows.length) {
     grid.innerHTML = '<div class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</div>';
     return;
@@ -12197,10 +12216,11 @@ async function hgRenderJobsList() {
     const color    = pickColor(j);
     const paper    = j.paper || j.size || '';
     const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
+    const isMil = (groupCounts[groupKey(j)] || 0) > 1;
     return `
       <div class="hg-job-card" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
         <div class="hg-job-head">
-          <span class="hg-job-id">#${_hgEsc(j.id)}</span>
+          <span class="hg-job-id">#${_hgEsc(j.id)}${isMil ? '<span class="hg-job-mil" title="Part of a mil / group job">MIL</span>' : ''}</span>
           ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
         </div>
         <div class="hg-job-name">${_hgEsc(j.name)}</div>
