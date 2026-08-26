@@ -1517,6 +1517,34 @@
     background: var(--brand); color: #fff;
     box-shadow: 0 1px 3px rgba(163,45,45,0.28);
   }
+  /* Sales pane inside the Jobs tab. Big hero number, then breakdown
+     sections (by company, by product type). Same maroon-on-cream
+     palette as the top hero. */
+  .hg-sales-hero {
+    background: linear-gradient(180deg, var(--brand) 0%, var(--brand-dark) 100%);
+    color: #fff; border-radius: var(--radius);
+    padding: 22px 24px; margin-bottom: 16px;
+    box-shadow: 0 4px 14px rgba(124,31,31,0.22);
+    text-align: center;
+  }
+  .hg-sales-hero-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; opacity: 0.85; margin-bottom: 4px; }
+  .hg-sales-hero-num   { font-size: 34px; font-weight: 800; line-height: 1.1; }
+  .hg-sales-hero-sub   { font-size: 12px; opacity: 0.85; margin-top: 8px; line-height: 1.5; }
+  .hg-sales-section    { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 12px; }
+  .hg-sales-section-title { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .hg-sales-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 7px 0; border-bottom: 1px dashed var(--border);
+    gap: 12px;
+  }
+  .hg-sales-row:last-child { border-bottom: none; }
+  .hg-sales-row-label { font-size: 13px; color: var(--text); word-break: break-word; }
+  .hg-sales-row-val   { font-size: 14px; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  @media (max-width: 560px) {
+    .hg-sales-hero { padding: 18px 16px; }
+    .hg-sales-hero-num { font-size: 26px; }
+    .hg-sales-section { padding: 12px 14px; }
+  }
   .hg-job-name { font-weight: 600; font-size: 15px; color: var(--text); line-height: 1.3; word-break: break-word; }
   .hg-job-client {
     font-size: 11px; color: var(--brand); text-transform: uppercase;
@@ -1561,28 +1589,36 @@
   </div>
   <!-- Jobs — responsive card grid. Fields per card: Job No, Name,
        Company, Code, Paper, Coatings, Machine, MRP, Ups, Color.
-       Grid auto-flows: 1-col on mobile, 2 on tablet, 3-4 on desktop. -->
+       Grid auto-flows: 1-col on mobile, 2 on tablet, 3-4 on desktop.
+       Sub-tabs: All jobs (default) / Sales (MRP × delivered qty). -->
   <div id="hg-jobs-list-pane" class="hg-data-pane" style="display:none;">
     <div class="hg-data-head">
       <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
         &#128209; Jobs <span id="hg-jobs-count" class="hg-count-pill">0</span>
       </div>
     </div>
-    <div class="hg-filters">
-      <input id="hg-jobs-search"  class="hg-search"  placeholder="Search name, code, machine&hellip;" oninput="hgRenderJobsList()">
-      <select id="hg-jobs-company" class="hg-select" onchange="hgRenderJobsList()">
-        <option value="">All companies</option>
-      </select>
-      <select id="hg-jobs-type" class="hg-select" onchange="hgRenderJobsList()">
-        <option value="">All types</option>
-        <option value="syrup">Syrup</option>
-        <option value="tablet">Tablet</option>
-        <option value="capsule">Capsule</option>
-        <option value="leaflet">Leaflet</option>
-        <option value="label">Label</option>
-      </select>
+    <div class="hg-subtabs" id="hg-jobs-subtabs">
+      <button class="hg-subtab active" data-sub="all"   onclick="hgJobsSubTab('all')">&#128209; Jobs</button>
+      <button class="hg-subtab"        data-sub="sales" onclick="hgJobsSubTab('sales')">&#128176; Sales</button>
     </div>
-    <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
+    <div id="hg-jobs-content">
+      <div class="hg-filters">
+        <input id="hg-jobs-search"  class="hg-search"  placeholder="Search name, code, machine&hellip;" oninput="hgRenderJobsList()">
+        <select id="hg-jobs-company" class="hg-select" onchange="hgRenderJobsList()">
+          <option value="">All companies</option>
+        </select>
+        <select id="hg-jobs-type" class="hg-select" onchange="hgRenderJobsList()">
+          <option value="">All types</option>
+          <option value="syrup">Syrup</option>
+          <option value="tablet">Tablet</option>
+          <option value="capsule">Capsule</option>
+          <option value="leaflet">Leaflet</option>
+          <option value="label">Label</option>
+        </select>
+      </div>
+      <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
+    </div>
+    <div id="hg-sales-pane" style="display:none;"></div>
   </div>
   <!-- Inventory — card grid + sub-tabs for the tracker's Total In,
        Total Out, and Manual Consumption reports. -->
@@ -13019,6 +13055,101 @@ function printManualConsumption() {
   });
 }
 // ── end ported reports block ──
+// Jobs sub-tab switcher — All jobs vs Sales rollup.
+function hgJobsSubTab(name) {
+  document.querySelectorAll('#hg-jobs-subtabs .hg-subtab').forEach(b => {
+    b.classList.toggle('active', b.dataset.sub === name);
+  });
+  const content = document.getElementById('hg-jobs-content');
+  const sales   = document.getElementById('hg-sales-pane');
+  const isSales = (name === 'sales');
+  if (content) content.style.display = isSales ? 'none' : '';
+  if (sales)   sales.style.display   = isSales ? '' : 'none';
+  if (isSales) hgRenderSales();
+}
+
+// Compute Sales = Σ (MRP × delivered qty) across all archived jobs.
+// MRP and delqty are TEXT fields in the tracker, so we parse loosely
+// (strip anything that isn't a digit / dot / minus). Jobs missing
+// either value are skipped and counted so the user sees why the total
+// might feel low.
+async function hgRenderSales() {
+  const pane = document.getElementById('hg-sales-pane');
+  if (!pane) return;
+  if (!__hgJobsCache) {
+    pane.innerHTML = '<div class="hg-data-empty">Loading&hellip;</div>';
+    try {
+      const res = await fetch('/api/jobs');
+      __hgJobsCache = await res.json();
+    } catch (e) {
+      pane.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
+      return;
+    }
+  }
+  const parseNum = (v) => {
+    const cleaned = String(v == null ? '' : v).replace(/[^0-9.\-]/g, '');
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
+  let total = 0, contribJobs = 0;
+  const byCompany = new Map();
+  const byType    = new Map();
+  for (const j of __hgJobsCache) {
+    const mrp = parseNum(j.mrp);
+    const qty = parseNum(j.delqty);
+    if (mrp <= 0 || qty <= 0) continue;
+    const sale = mrp * qty;
+    total += sale;
+    contribJobs++;
+    const client = (j.client || 'Unknown').trim() || 'Unknown';
+    const type   = _hgJobType(j) || 'other';
+    byCompany.set(client, (byCompany.get(client) || 0) + sale);
+    byType.set(type,      (byType.get(type)      || 0) + sale);
+  }
+  const skipped = __hgJobsCache.length - contribJobs;
+  const companyRows = [...byCompany.entries()].sort((a, b) => b[1] - a[1]);
+  const typeOrder = ['syrup', 'tablet', 'capsule', 'leaflet', 'label', 'other'];
+  const typeRows = [...byType.entries()].sort((a, b) => b[1] - a[1]);
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  pane.innerHTML = `
+    <div class="hg-sales-hero">
+      <div class="hg-sales-hero-label">TOTAL SALES</div>
+      <div class="hg-sales-hero-num">${fmtMoney(total)}</div>
+      <div class="hg-sales-hero-sub">
+        MRP &times; delivered qty across ${contribJobs} of ${__hgJobsCache.length} archived jobs
+        &nbsp;&middot;&nbsp; ${byCompany.size} compan${byCompany.size === 1 ? 'y' : 'ies'}
+        ${skipped > 0 ? `<br>${skipped} job${skipped === 1 ? '' : 's'} skipped (missing MRP or delivered qty)` : ''}
+      </div>
+    </div>
+    ${companyRows.length ? `
+    <div class="hg-sales-section">
+      <div class="hg-sales-section-title">By Company</div>
+      ${companyRows.map(([c, v]) => `
+        <div class="hg-sales-row">
+          <span class="hg-sales-row-label">${_hgEsc(c)}</span>
+          <span class="hg-sales-row-val">${fmtMoney(v)}</span>
+        </div>
+      `).join('')}
+    </div>` : ''}
+    ${typeRows.length ? `
+    <div class="hg-sales-section">
+      <div class="hg-sales-section-title">By Product Type</div>
+      ${typeRows.map(([t, v]) => `
+        <div class="hg-sales-row">
+          <span class="hg-sales-row-label">${_hgEsc(cap(t))}</span>
+          <span class="hg-sales-row-val">${fmtMoney(v)}</span>
+        </div>
+      `).join('')}
+    </div>` : ''}
+    ${!contribJobs ? `
+    <div class="hg-sales-section" style="text-align:center;color:var(--text2);">
+      No sales to show. Every archived job either has a blank MRP or a blank delivered qty.
+      Fill those in on the job card and reopen this tab.
+    </div>` : ''}
+  `;
+}
+
 // Inventory sub-tab switcher. Delegates to the tracker's own report
 // functions (openStockTotalPane / openManualConsumptionPane) — they're
 // still in the code we copied and only need their target rt-* divs
