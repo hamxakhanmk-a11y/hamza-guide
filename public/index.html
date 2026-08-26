@@ -11987,7 +11987,16 @@ async function hgSyncTracker() {
     const res = await fetch('/api/sync-tracker', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sync failed');
-    status.textContent = `Synced ${data.jobs} jobs · ${new Date().toLocaleTimeString()}`;
+    // Show what this run pulled + how many rows the safe-point archive
+    // now holds in total. Upsert model = archive only grows.
+    const bits = [];
+    if (data.jobs      != null) bits.push(`${data.jobs} jobs`);
+    if (data.inventory != null) bits.push(`${data.inventory} inventory`);
+    const pulled = bits.join(' + ') || '0 rows';
+    const archive = (data.archive_jobs != null || data.archive_inventory != null)
+      ? ` · archive: ${data.archive_jobs ?? 0} jobs, ${data.archive_inventory ?? 0} inventory`
+      : '';
+    status.textContent = `Synced ${pulled} · ${new Date().toLocaleTimeString()}${archive}`;
     if (typeof loadJobs === 'function') { try { await loadJobs(); } catch (_) {} }
     if (typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
   } catch (e) {

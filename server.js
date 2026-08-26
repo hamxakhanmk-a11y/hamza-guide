@@ -848,37 +848,78 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
 });
 
 // ── Sync from Tracker ────────────────────────────────────────
-// Pulls the tracker's jobs table over into a local tracker_jobs mirror
-// (JSON blobs, schema-agnostic so tracker schema changes don't break us).
+// Pulls jobs + inventory from the tracker's DB into local tracker_*
+// mirrors (JSON blobs — schema-agnostic so tracker schema changes never
+// break us).
+//
+// UPSERT model — never deletes. If a row disappears from the tracker
+// (deleted, wiped, corrupted), our mirror still has the last-known copy.
+// New rows are inserted; changed rows are updated; missing rows stay.
+// This is what makes Hamza Guide a real safe-point / archive.
+//
 // READ-ONLY on the tracker side — only SELECT ever runs against it.
-// Trigger: the "Sync from Tracker" button in the Jobs tab.
-app.post('/api/sync-tracker', async (req, res) => {
+// Exposed on GET (Vercel Cron sends GET) and POST (button in the UI).
+async function syncTrackerHandler(req, res) {
   const trackerUrl = process.env.TRACKER_DATABASE_URL;
   if (!trackerUrl) {
     return res.status(500).json({ error: 'TRACKER_DATABASE_URL is not set in the environment' });
   }
+  const local   = getDb();
+  const tracker = neon(trackerUrl);
+  const result  = { ok: true, mode: 'upsert (no deletions — safe archive)', synced_at: new Date().toISOString() };
   try {
     await dbReady;
-    const local   = getDb();
-    const tracker = neon(trackerUrl);
-    await local`
-      CREATE TABLE IF NOT EXISTS tracker_jobs (
-        id          INTEGER PRIMARY KEY,
-        data        JSONB NOT NULL,
-        synced_at   TIMESTAMPTZ DEFAULT NOW()
-      )
-    `;
-    const rows = await tracker`SELECT * FROM jobs ORDER BY id`;
-    await local`TRUNCATE tracker_jobs`;
-    for (const r of rows) {
-      await local`INSERT INTO tracker_jobs (id, data) VALUES (${r.id}, ${JSON.stringify(r)}::jsonb)`;
+    // Each mirror stores id + data + synced_at. Rows only ever go in or
+    // update in place; nothing gets removed.
+    async function ensureMirror(name) {
+      if (name === 'jobs') {
+        await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      } else if (name === 'inventory') {
+        await local`CREATE TABLE IF NOT EXISTS tracker_inventory (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      }
     }
-    res.json({ ok: true, jobs: rows.length, synced_at: new Date().toISOString() });
+    // --- jobs ---
+    try {
+      await ensureMirror('jobs');
+      const rows = await tracker`SELECT * FROM jobs ORDER BY id`;
+      for (const r of rows) {
+        await local`
+          INSERT INTO tracker_jobs (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+        `;
+      }
+      result.jobs = rows.length;
+    } catch (e) { result.jobs_error = e.message; }
+    // --- inventory ---
+    try {
+      await ensureMirror('inventory');
+      const rows = await tracker`SELECT * FROM inventory ORDER BY id`;
+      for (const r of rows) {
+        await local`
+          INSERT INTO tracker_inventory (id, data, synced_at)
+          VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
+          ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, synced_at = NOW()
+        `;
+      }
+      result.inventory = rows.length;
+    } catch (e) { result.inventory_error = e.message; }
+    // Report archive totals so the caller (button or cron log) can see how
+    // big the safe-point copy is right now.
+    try {
+      const [jobsCount]      = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;
+      const [inventoryCount] = await local`SELECT COUNT(*)::int AS n FROM tracker_inventory`;
+      result.archive_jobs      = jobsCount?.n ?? 0;
+      result.archive_inventory = inventoryCount?.n ?? 0;
+    } catch (_) {}
+    res.json(result);
   } catch (err) {
     console.error('Sync error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, partial: result });
   }
-});
+}
+app.post('/api/sync-tracker', syncTrackerHandler);
+app.get('/api/sync-tracker',  syncTrackerHandler);
 
 // Helper: parse the sheets-qty form field into an integer. Returns 0 on garbage.
 function parseSheets(v) {
@@ -1206,6 +1247,13 @@ app.get('/api/inventory', requireAuth, async (req, res) => {
   try {
     await dbReady;
     const sql = getDb();
+    // Prefer the synced tracker mirror when it has rows — same Option-B
+    // pattern as /api/jobs. Falls back to the local inventory table only
+    // when nothing has been synced yet.
+    try {
+      const mirror = await sql`SELECT data FROM tracker_inventory ORDER BY id ASC`;
+      if (mirror.length > 0) return res.json(mirror.map(r => r.data));
+    } catch (_) { /* mirror table not created yet — fall through */ }
     // Also attach the most recent stock-in and stock-out per item so the
     // inventory cards can show small green "+N" and red "-N" pills at a
     // glance. Subqueries are scoped to one item_id each (the per-item index
