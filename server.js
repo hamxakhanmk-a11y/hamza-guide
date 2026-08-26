@@ -905,13 +905,29 @@ async function syncTrackerHandler(req, res) {
       result.inventory = rows.length;
     } catch (e) { result.inventory_error = e.message; }
     // Report archive totals so the caller (button or cron log) can see how
-    // big the safe-point copy is right now.
+    // big the safe-point copy is right now. Also read the tracker's live
+    // totals to sanity-check we got everything on this run.
     try {
       const [jobsCount]      = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;
       const [inventoryCount] = await local`SELECT COUNT(*)::int AS n FROM tracker_inventory`;
       result.archive_jobs      = jobsCount?.n ?? 0;
       result.archive_inventory = inventoryCount?.n ?? 0;
     } catch (_) {}
+    try {
+      const [tj] = await tracker`SELECT COUNT(*)::int AS n FROM jobs`;
+      const [ti] = await tracker`SELECT COUNT(*)::int AS n FROM inventory`;
+      result.tracker_jobs      = tj?.n ?? 0;
+      result.tracker_inventory = ti?.n ?? 0;
+    } catch (_) {}
+    // Complete = the mirror holds AT LEAST every row that's currently in
+    // tracker. Archive is allowed to exceed tracker (rows tracker has
+    // since deleted are still preserved on our side).
+    result.complete = (
+      result.archive_jobs      != null && result.tracker_jobs      != null &&
+      result.archive_inventory != null && result.tracker_inventory != null &&
+      result.archive_jobs      >= result.tracker_jobs &&
+      result.archive_inventory >= result.tracker_inventory
+    );
     res.json(result);
   } catch (err) {
     console.error('Sync error:', err);
