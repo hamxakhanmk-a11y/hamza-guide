@@ -1168,6 +1168,7 @@
       <button class="mode-btn"        id="hg-tab-job"   onclick="hgShowTab('job')">&#128203; Job (PO)</button>
       <button class="mode-btn active" id="hg-tab-paper" onclick="hgShowTab('paper')">&#129518; Paper</button>
       <button class="mode-btn"        id="hg-tab-color" onclick="hgShowTab('color')">&#127912; Color</button>
+      <button class="mode-btn"        id="hg-tab-jobs"  onclick="hgShowTab('jobs')">&#128209; Jobs</button>
       <button class="mode-btn"        id="hg-tab-inbox" onclick="hgShowTab('inbox')">&#9993;&#65039; Inbox</button>
     </div>
   </div>
@@ -11928,11 +11929,13 @@ function startSmartPolling() {
 init();
 
 // ── Hamza Guide tab switcher ───────────────────────────────────
-// Four top-level tabs in the fixed topbar: Job (PO), Paper, Color, Inbox.
-// Paper / Job swap the calculator popover into the matching mode. Color is a
-// dedicated Lab measurement screen; it deliberately has no generic CMYK math.
+// Five top-level tabs in the fixed topbar: Job (PO), Paper, Color, Jobs,
+// Inbox. Paper / Job / Jobs each drive the calc-popover into the matching
+// mode (Jobs = History-style searchable list of past jobs — populates
+// from the tracker DB once wired). Color = dedicated Lab measurement
+// screen. Inbox = coming-soon placeholder.
 function hgShowTab(name) {
-  ['job','paper','color','inbox'].forEach(t => {
+  ['job','paper','color','jobs','inbox'].forEach(t => {
     const btn = document.getElementById('hg-tab-' + t);
     if (btn) btn.classList.toggle('active', t === name);
   });
@@ -11941,8 +11944,9 @@ function hgShowTab(name) {
   if (inboxPane) inboxPane.style.display = (name === 'inbox') ? 'block' : 'none';
   if (colorPane) colorPane.style.display = (name === 'color') ? 'block' : 'none';
   if (name === 'color') colorShowView('lab');
-  if (name === 'job'   && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
-  else if (name === 'paper' && typeof openCalculator    === 'function') openCalculator();
+  if (name === 'job'   && typeof openCalculatorJobMode     === 'function') openCalculatorJobMode();
+  else if (name === 'paper' && typeof openCalculator            === 'function') openCalculator();
+  else if (name === 'jobs'  && typeof openCalculatorHistoryMode === 'function') openCalculatorHistoryMode();
   else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
 }
 
