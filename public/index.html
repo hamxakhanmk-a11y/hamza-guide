@@ -1492,6 +1492,14 @@
       <select id="hg-jobs-company" class="hg-select" onchange="hgRenderJobsList()">
         <option value="">All companies</option>
       </select>
+      <select id="hg-jobs-type" class="hg-select" onchange="hgRenderJobsList()">
+        <option value="">All types</option>
+        <option value="syrup">Syrup</option>
+        <option value="tablet">Tablet</option>
+        <option value="capsule">Capsule</option>
+        <option value="leaflet">Leaflet</option>
+        <option value="label">Label</option>
+      </select>
     </div>
     <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
   </div>
@@ -12105,6 +12113,22 @@ function _hgEsc(v) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// Best-guess product type from a job name. The tracker doesn't store
+// a type field — this scans the job name for the standard packaging
+// keywords (\btab\b, \bcaps?\b, syrup/susp, leaflet, label). Longer /
+// more specific keywords are checked first so "capsule" never gets
+// mis-tagged as "tablet".
+function _hgJobType(j) {
+  const s = (j && j.name || '').toLowerCase();
+  if (!s) return '';
+  if (/\bsyrup\b|\bsusp(?:ension)?\b/.test(s))              return 'syrup';
+  if (/\bleaflet\b|\binsert\b/.test(s))                     return 'leaflet';
+  if (/\blabels?\b|\bstickers?\b/.test(s))                  return 'label';
+  if (/\bcapsules?\b|\bcaps?\b/.test(s))                    return 'capsule';
+  if (/\btablets?\b|\btabs?\b/.test(s))                     return 'tablet';
+  return '';
+}
+
 // Fetch (once, cached) and render the Jobs card grid. Live-filters
 // against the search box + company dropdown; both re-render locally
 // without a re-fetch. Fields on each card: Job No, Name, Company,
@@ -12140,8 +12164,10 @@ async function hgRenderJobsList() {
   }
   const q     = ((document.getElementById('hg-jobs-search') || {}).value || '').trim().toLowerCase();
   const comp  = ((compSel || {}).value || '').trim().toLowerCase();
+  const type  = ((document.getElementById('hg-jobs-type') || {}).value || '').trim().toLowerCase();
   const rows  = __hgJobsCache.filter(j => {
     if (comp && (j.client || '').trim().toLowerCase() !== comp) return false;
+    if (type && _hgJobType(j) !== type) return false;
     if (q) {
       const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''} ${j.mrp||''}`.toLowerCase();
       if (!hay.includes(q)) return false;
