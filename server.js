@@ -868,7 +868,7 @@ async function syncTrackerHandler(req, res) {
   }
   const local   = getDb();
   const tracker = neon(trackerUrl);
-  const result  = { ok: true, mode: 'upsert (no deletions — safe archive)', synced_at: new Date().toISOString() };
+  const result  = { ok: true, mode: 'jobs frozen; normal inventory refreshed', synced_at: new Date().toISOString() };
   try {
     await dbReady;
     // Freeze-once-pulled sync:
@@ -882,6 +882,9 @@ async function syncTrackerHandler(req, res) {
     // Speed: batch INSERTs via sql.transaction() → ceil(N/CHUNK) HTTP
     // round-trips instead of N.
     const CHUNK = 50;
+    let normalInventoryIds = new Set();
+    let normalInventoryCount = 0;
+    let inventorySyncReady = false;
     // Jobs mirror: INSERT ... ON CONFLICT DO NOTHING → freeze once pulled.
     // Inventory mirror: INSERT ... ON CONFLICT DO UPDATE → refresh every
     // sync so current_balance / supplier / reorder stay live.
@@ -921,20 +924,53 @@ async function syncTrackerHandler(req, res) {
       result.jobs_new  = await jobsInsertOnlyBatch(rows);
       result.jobs      = rows.length;
     } catch (e) { result.jobs_error = e.message; }
-    // Inventory items — always refresh so current_balance tracks the
-    // tracker's live stock levels after each stock-in / stock-out.
-    // Rows deleted in tracker are preserved here (upsert, never DELETE).
+    // Inventory — Guide is for full normal sheets/packets only. Offcuts and
+    // their issuances remain available in Tracker but are deliberately kept
+    // out of this simplified Guide inventory.
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_inventory_items (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      const rows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
+      await local`CREATE TABLE IF NOT EXISTS tracker_inventory_transactions (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      const allRows = await tracker`SELECT * FROM inventory_items ORDER BY id`;
+      const isOffcut = row => row.is_offcut === true || ['true', 't', '1'].includes(String(row.is_offcut || '').toLowerCase());
+      const rows = allRows.filter(row => !isOffcut(row));
+      normalInventoryIds = new Set(rows.map(row => Number(row.id)));
+      normalInventoryCount = rows.length;
+
+      // Clear any already-mirrored offcuts (including old offcuts that have
+      // since been deleted in Tracker). This changes Guide only, never the
+      // Tracker database.
+      const mirroredOffcuts = await local`
+        SELECT id FROM tracker_inventory_items
+        WHERE lower(COALESCE(data->>'is_offcut', 'false')) IN ('true', 't', '1')
+      `;
+      const excludedIds = new Set([
+        ...allRows.filter(isOffcut).map(row => Number(row.id)),
+        ...mirroredOffcuts.map(row => Number(row.id)),
+      ]);
+      for (const ids of Array.from(excludedIds).reduce((groups, id, index) => {
+        const group = Math.floor(index / CHUNK);
+        (groups[group] ||= []).push(id);
+        return groups;
+      }, [])) {
+        const statements = ids.flatMap(id => [
+          local`DELETE FROM tracker_inventory_transactions WHERE data->>'item_id' = ${String(id)}`,
+          local`DELETE FROM tracker_inventory_items WHERE id = ${id}`,
+        ]);
+        await local.transaction(statements);
+      }
+
       result.inventory_refreshed = await inventoryUpsertBatch(rows);
       result.inventory           = rows.length;
+      result.inventory_excluded  = excludedIds.size;
+      inventorySyncReady = true;
     } catch (e) { result.inventory_error = e.message; }
     // Inventory transactions — same upsert rule, feeds the Total In /
     // Total Out / Manual Consumption reports on the Inventory tab.
     try {
+      if (!inventorySyncReady) throw new Error('Normal inventory could not be loaded, so transactions were left unchanged');
       await local`CREATE TABLE IF NOT EXISTS tracker_inventory_transactions (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      const rows = await tracker`SELECT * FROM inventory_transactions ORDER BY id`;
+      const allRows = await tracker`SELECT * FROM inventory_transactions ORDER BY id`;
+      const rows = allRows.filter(row => normalInventoryIds.has(Number(row.item_id)));
       for (let i = 0; i < rows.length; i += CHUNK) {
         const batch = rows.slice(i, i + CHUNK);
         const stmts = batch.map(r => local`
@@ -946,13 +982,13 @@ async function syncTrackerHandler(req, res) {
       }
       result.transactions_refreshed = rows.length;
     } catch (e) { result.transactions_error = e.message; }
-    result.mode = 'jobs frozen; inventory + transactions refreshed';
+    result.mode = 'jobs frozen; normal inventory + normal issuances refreshed';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_inventory_items`; result.archive_inventory = n?.n ?? 0; } catch (_) {}
     try { const [n] = await tracker`SELECT COUNT(*)::int AS n FROM jobs`;                   result.tracker_jobs      = n?.n ?? 0; } catch (_) {}
-    try { const [n] = await tracker`SELECT COUNT(*)::int AS n FROM inventory_items`;        result.tracker_inventory = n?.n ?? 0; } catch (_) {}
+    if (inventorySyncReady) result.tracker_inventory = normalInventoryCount;
     // Complete = the mirror holds AT LEAST every row that's currently in
     // tracker. Archive is allowed to exceed tracker (rows tracker has
     // since deleted are still preserved on our side).

@@ -13860,6 +13860,7 @@ async function hgSyncTracker() {
         : '0 new — delivered jobs already in archive');
     }
     if (data.inventory_refreshed != null) parts.push(`${data.inventory_refreshed} inventory refreshed`);
+    if (data.inventory_excluded) parts.push(`${data.inventory_excluded} offcut item${data.inventory_excluded === 1 ? '' : 's'} excluded`);
     if (data.archive_jobs != null || data.archive_inventory != null) {
       parts.push(`archive: ${data.archive_jobs ?? 0} jobs · ${data.archive_inventory ?? 0} inventory`);
     }
