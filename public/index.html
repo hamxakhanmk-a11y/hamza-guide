@@ -1740,12 +1740,12 @@
           <option value="label">Label</option>
         </select>
         <select id="hg-jobs-period" class="hg-select" onchange="hgJobsPeriodChange()">
-          <option value="today" selected>Today</option>
-          <option value="week">This week</option>
-          <option value="month">This month</option>
-          <option value="last-month">Last month</option>
-          <option value="year">This year</option>
-          <option value="last-year">Last year</option>
+          <option value="today" selected>Delivered today</option>
+          <option value="week">Delivered this week</option>
+          <option value="month">Delivered this month</option>
+          <option value="last-month">Delivered last month</option>
+          <option value="year">Delivered this year</option>
+          <option value="last-year">Delivered last year</option>
           <option value="">All time</option>
           <option value="custom">Custom range&hellip;</option>
         </select>
@@ -12524,9 +12524,28 @@ function _hgPeriodRange(period, customFrom, customTo) {
   return { from: null, to: null };
 }
 
-// Extract a job's effective date as YYYY-MM-DD for range comparison.
-// dateissued is the intent; created_at is the fallback for older rows.
+// Convert the Tracker's saved stage time to YYYY-MM-DD without allowing the
+// browser timezone to shift the date. Tracker stores both current
+// "dd/mm/yyyy HH:MM" values and legacy "d/m/yyyy, h:mm am/pm" values.
+function _hgStageDate(stageTime) {
+  if (!stageTime) return '';
+  const value = String(stageTime).trim();
+  let match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s|,|$)/);
+  if (match) return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+  match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// Guide contains delivered Tracker jobs only, so every date filter must mean
+// the date it was delivered—not the older PO/issue date. The latter hid job
+// #292 even though it was delivered today.
 function _hgJobDate(j) {
+  const deliveredStage = j && j.stages && j.stages[STAGES.length - 1];
+  const deliveredDate = _hgStageDate(deliveredStage && deliveredStage.time);
+  if (deliveredDate) return deliveredDate;
   if (j.dateissued) return String(j.dateissued).slice(0, 10);
   if (j.created_at) return String(j.created_at).slice(0, 10);
   return '';
@@ -13835,7 +13854,11 @@ async function hgSyncTracker() {
     // Jobs are frozen (only new-delivery counts matter); inventory
     // is refreshed on every sync (all rows overwritten).
     const parts = [];
-    if (data.jobs_new           != null) parts.push(`+${data.jobs_new} new job${data.jobs_new === 1 ? '' : 's'}`);
+    if (data.jobs_new != null) {
+      parts.push(data.jobs_new
+        ? `+${data.jobs_new} new job${data.jobs_new === 1 ? '' : 's'}`
+        : '0 new — delivered jobs already in archive');
+    }
     if (data.inventory_refreshed != null) parts.push(`${data.inventory_refreshed} inventory refreshed`);
     if (data.archive_jobs != null || data.archive_inventory != null) {
       parts.push(`archive: ${data.archive_jobs ?? 0} jobs · ${data.archive_inventory ?? 0} inventory`);
