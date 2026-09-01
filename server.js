@@ -168,6 +168,19 @@ async function initDb() {
     await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cut_size    TEXT`;
     await sql`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS offcut_size TEXT`;
 
+    // Guide-only jobs are deliberately separate from both the Tracker mirror
+    // and the legacy jobs table above. They are personal planning records:
+    // creating one here must never issue stock or write back to Tracker.
+    // A JSON payload keeps the card flexible as Hamza adds fields over time.
+    await sql`
+      CREATE TABLE IF NOT EXISTS guide_manual_jobs (
+        id         SERIAL PRIMARY KEY,
+        data       JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
     // Soft-delete (Trash) columns: when admin "Delete from History" deletes a
     // delivered job, we set deleted_at instead of dropping the row, so the
     // admin has 30 days to recover it from the Trash page. Auto-purged later.
@@ -843,6 +856,69 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
     } catch (_) {
       return res.json([]);
     }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Guide private jobs ───────────────────────────────────────
+// These are created inside Hamza Guide for planning/reference. They never
+// touch Tracker, inventory, stock issuance, or the delivered-job archive.
+app.get('/api/guide-jobs', requireAuth, async (req, res) => {
+  try {
+    await dbReady;
+    const sql = getDb();
+    const rows = await sql`SELECT id, data, created_at, updated_at FROM guide_manual_jobs ORDER BY id DESC`;
+    res.json(rows.map(row => ({ ...row.data, id: row.id, created_at: row.created_at, updated_at: row.updated_at, guide_manual: true })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/guide-jobs', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const { name, client } = req.body || {};
+    if (!String(name || '').trim() || !String(client || '').trim()) {
+      return res.status(400).json({ error: 'Job name and company are required' });
+    }
+    const sql = getDb();
+    const data = { ...req.body, name: String(name).trim(), client: String(client).trim() };
+    const rows = await sql`
+      INSERT INTO guide_manual_jobs (data) VALUES (${JSON.stringify(data)})
+      RETURNING id, data, created_at, updated_at
+    `;
+    const row = rows[0];
+    await logAudit(sql, req, { action: 'guide_job.create', entityType: 'guide_job', entityId: row.id, summary: `Created Guide job #${row.id}: ${data.name} (${data.client})` });
+    res.json({ ...row.data, id: row.id, created_at: row.created_at, updated_at: row.updated_at, guide_manual: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/guide-jobs/:id', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const id = parseInt(req.params.id, 10);
+    const { name, client } = req.body || {};
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid job' });
+    if (!String(name || '').trim() || !String(client || '').trim()) {
+      return res.status(400).json({ error: 'Job name and company are required' });
+    }
+    const sql = getDb();
+    const data = { ...req.body, name: String(name).trim(), client: String(client).trim() };
+    const rows = await sql`
+      UPDATE guide_manual_jobs SET data=${JSON.stringify(data)}, updated_at=NOW()
+      WHERE id=${id}
+      RETURNING id, data, created_at, updated_at
+    `;
+    if (!rows.length) return res.status(404).json({ error: 'Guide job not found' });
+    const row = rows[0];
+    await logAudit(sql, req, { action: 'guide_job.update', entityType: 'guide_job', entityId: id, summary: `Edited Guide job #${id}: ${data.name}` });
+    res.json({ ...row.data, id: row.id, created_at: row.created_at, updated_at: row.updated_at, guide_manual: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

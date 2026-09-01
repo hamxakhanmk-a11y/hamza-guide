@@ -1715,7 +1715,7 @@
       <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
         &#128209; Jobs <span id="hg-jobs-count" class="hg-count-pill">0</span>
       </div>
-      <label class="hg-selectall">
+      <label id="hg-jobs-selectall" class="hg-selectall">
         <input type="checkbox" id="hg-jobs-select-all"
                onchange="hgToggleAllVisibleJobs(this.checked)">
         Select all visible
@@ -1723,6 +1723,7 @@
     </div>
     <div class="hg-subtabs" id="hg-jobs-subtabs">
       <button class="hg-subtab active" data-sub="all"   onclick="hgJobsSubTab('all')">&#128209; Jobs</button>
+      <button class="hg-subtab"        data-sub="manual" onclick="hgJobsSubTab('manual')">&#10133; New Jobs</button>
       <button class="hg-subtab"        data-sub="sales" onclick="hgJobsSubTab('sales')">&#128176; Sales</button>
     </div>
     <div id="hg-jobs-content">
@@ -1756,6 +1757,30 @@
         </span>
       </div>
       <div id="hg-jobs-grid" class="hg-jobs-grid"></div>
+    </div>
+    <!-- New Jobs is Guide-only: these cards are saved here and never sent to
+         Tracker or used to issue stock. -->
+    <div id="hg-manual-jobs-pane" style="display:none;">
+      <div class="hg-data-head" style="margin-top:2px;">
+        <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+          &#10133; New Jobs <span id="hg-manual-jobs-count" class="hg-count-pill">0</span>
+        </div>
+        <button class="btn btn-primary" onclick="hgOpenManualJobForm()">+ Create Job</button>
+      </div>
+      <div class="hg-filters">
+        <input id="hg-manual-jobs-search" class="hg-search" placeholder="Search name, code, machine&hellip;" oninput="hgRenderManualJobs()">
+        <select id="hg-manual-jobs-company" class="hg-select" onchange="hgRenderManualJobs()"><option value="">All companies</option></select>
+        <select id="hg-manual-jobs-type" class="hg-select" onchange="hgRenderManualJobs()">
+          <option value="">All types</option>
+          <option value="syrup">Syrup</option>
+          <option value="tablet">Tablet</option>
+          <option value="capsule">Capsule</option>
+          <option value="leaflet">Leaflet</option>
+          <option value="label">Label</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div id="hg-manual-jobs-grid" class="hg-jobs-grid"></div>
     </div>
     <div id="hg-sales-pane" style="display:none;"></div>
   </div>
@@ -12385,12 +12410,17 @@ function hgShowTab(name) {
   if (colorPane) colorPane.style.display = (name === 'color')     ? 'block' : 'none';
   if (jobsList)  jobsList.style.display  = (name === 'jobs')      ? 'block' : 'none';
   if (invPane)   invPane.style.display   = (name === 'inventory') ? 'block' : 'none';
-  if (dataBar)   dataBar.style.display   = isData ? 'block' : 'none';
+  // Returning to Jobs keeps whichever Jobs sub-tab the user last selected.
+  const manualJobsOpen = name === 'jobs' && document.getElementById('hg-manual-jobs-pane')?.style.display !== 'none';
+  if (dataBar)   dataBar.style.display   = (isData && !manualJobsOpen) ? 'block' : 'none';
   if (content)   content.classList.toggle('hg-wide', isData);
   if (name === 'color') colorShowView('lab');
   if      (name === 'job'       && typeof openCalculatorJobMode === 'function') openCalculatorJobMode();
   else if (name === 'paper'     && typeof openCalculator        === 'function') openCalculator();
-  else if (name === 'jobs'     ) { if (typeof closeCalculator === 'function') closeCalculator(); hgRenderJobsList(); }
+  else if (name === 'jobs'     ) {
+    if (typeof closeCalculator === 'function') closeCalculator();
+    manualJobsOpen ? hgRenderManualJobs() : hgRenderJobsList();
+  }
   else if (name === 'inventory') { if (typeof closeCalculator === 'function') closeCalculator(); hgRenderInventoryList(); }
   else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
 }
@@ -12400,6 +12430,7 @@ function hgShowTab(name) {
 // Sync events reset them so the next tab open picks up new rows.
 let __hgJobsCache = null;
 let __hgInvCache  = null;
+let __hgManualJobsCache = null;
 // Selection state (shared by Jobs cards + Sales table rows).
 const __hgSelectedJobs = new Set();
 // Latest computed Sales snapshot — hgExportSales reads these so the
@@ -12684,6 +12715,168 @@ async function hgRenderJobsList() {
   }).join('');
   hgSyncJobsSelectAllCheckbox(rows);
   hgUpdateSelBar();
+}
+
+// ── New Jobs (Guide-only private job cards) ───────────────────
+// Kept separate from __hgJobsCache because that cache is the delivered-job
+// archive mirrored from Tracker. These cards are saved only in Hamza Guide.
+const HG_MANUAL_JOB_TYPES = ['syrup', 'tablet', 'capsule', 'leaflet', 'label', 'other'];
+
+function hgManualJobTypeLabel(type) {
+  const t = String(type || '').trim().toLowerCase();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Other';
+}
+
+async function hgRenderManualJobs() {
+  const grid = document.getElementById('hg-manual-jobs-grid');
+  const count = document.getElementById('hg-manual-jobs-count');
+  const company = document.getElementById('hg-manual-jobs-company');
+  if (!grid) return;
+  if (!__hgManualJobsCache) {
+    grid.innerHTML = '<div class="hg-data-empty">Loading your jobs&hellip;</div>';
+    try {
+      __hgManualJobsCache = await api('GET', '/api/guide-jobs');
+    } catch (e) {
+      grid.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
+      return;
+    }
+  }
+  if (company) {
+    const keep = company.value;
+    const companies = [...new Map(__hgManualJobsCache
+      .map(j => String(j.client || '').trim())
+      .filter(Boolean)
+      .map(c => [c.toLowerCase(), c])).values()]
+      .sort((a,b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    company.innerHTML = '<option value="">All companies</option>' +
+      companies.map(c => `<option value="${_hgEsc(c)}">${_hgEsc(c)}</option>`).join('');
+    company.value = keep;
+  }
+  const q = String((document.getElementById('hg-manual-jobs-search') || {}).value || '').trim().toLowerCase();
+  const companyFilter = String((company || {}).value || '').trim().toLowerCase();
+  const typeFilter = String((document.getElementById('hg-manual-jobs-type') || {}).value || '').trim().toLowerCase();
+  const rows = __hgManualJobsCache.filter(j => {
+    if (companyFilter && String(j.client || '').trim().toLowerCase() !== companyFilter) return false;
+    if (typeFilter && String(j.type || 'other').toLowerCase() !== typeFilter) return false;
+    if (q) {
+      const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.ref||''} ${j.paper||''} ${j.machine||''} ${j.size||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  if (count) count.textContent = (q || companyFilter || typeFilter) ? `${rows.length} of ${__hgManualJobsCache.length}` : String(__hgManualJobsCache.length);
+  if (!rows.length) {
+    grid.innerHTML = `<div class="hg-data-empty">${__hgManualJobsCache.length ? 'No matching jobs.' : 'No private jobs yet. Click <b>+ Create Job</b> to save your first one.'}</div>`;
+    return;
+  }
+  grid.innerHTML = rows.map(j => {
+    const coatings = Array.isArray(j.coatings) ? j.coatings.filter(Boolean).join(', ') : String(j.coatings || '');
+    const paper = j.paper || j.size || '';
+    const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
+    const color = j.colors || j.color || '';
+    return `
+      <div class="hg-job-card" onclick="hgOpenManualJobForm(${Number(j.id)})" title="Click to edit">
+        <div class="hg-job-head">
+          <span class="hg-job-id">#${_hgEsc(j.id)} <span class="hg-job-mil">NEW</span></span>
+          <span class="hg-job-mrp">${_hgEsc(hgManualJobTypeLabel(j.type))}</span>
+        </div>
+        <div class="hg-job-name">${_hgEsc(j.name)}</div>
+        <div class="hg-job-client">${_hgEsc(j.client)}${codeChip}</div>
+        <div class="hg-job-specs">
+          <div class="hg-spec"><span class="hg-spec-key">Paper</span><span class="hg-spec-val">${_hgEsc(paper) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Machine</span><span class="hg-spec-val">${_hgEsc(j.machine) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Ups</span><span class="hg-spec-val">${_hgEsc(j.ups) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Colors</span><span class="hg-spec-val">${_hgEsc(color) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">P.O. Qty</span><span class="hg-spec-val">${_hgEsc(j.qty) || '&mdash;'}</span></div>
+          <div class="hg-spec"><span class="hg-spec-key">Deadline</span><span class="hg-spec-val">${_hgEsc(j.deadline) || '&mdash;'}</span></div>
+          ${coatings ? `<div class="hg-spec wide"><span class="hg-spec-key">Coatings</span><span class="hg-spec-val">${_hgEsc(coatings)}</span></div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function hgManualField(id, value) {
+  return _hgEsc(value == null ? '' : value);
+}
+
+function hgOpenManualJobForm(id) {
+  const j = id ? (__hgManualJobsCache || []).find(row => Number(row.id) === Number(id)) : {};
+  if (id && !j) return notify('Job could not be found. Please reload this tab.');
+  const value = (key) => hgManualField(key, j?.[key]);
+  const type = String(j?.type || 'other').toLowerCase();
+  const coatings = Array.isArray(j?.coatings) ? j.coatings : [];
+  const selected = v => coatings.includes(v) ? ' checked' : '';
+  const machineOptions = MACHINES.map(m => `<option value="${esc(m)}"${j?.machine === m ? ' selected' : ''}>${esc(m)}</option>`).join('');
+  const typeOptions = HG_MANUAL_JOB_TYPES.map(t => `<option value="${t}"${type === t ? ' selected' : ''}>${hgManualJobTypeLabel(t)}</option>`).join('');
+  openModal(`
+    <div class="modal modal-lg">
+      <div class="modal-head"><h2>${id ? 'Edit New Job' : 'Create New Job'}</h2><button class="modal-x" onclick="closeModal()">&times;</button></div>
+      <div class="modal-body" style="max-height:72vh;overflow:auto;">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">This job is saved only in Hamza Guide. It does not send anything to Tracker or use inventory.</div>
+        <table class="jc-form">
+          <tr>
+            <td><span class="jc-lbl">Date</span><input type="date" id="gm-dateissued" value="${value('dateissued') || new Date().toISOString().slice(0,10)}"></td>
+            <td><span class="jc-lbl">Deadline</span><input type="date" id="gm-deadline" value="${value('deadline')}"></td>
+            <td><span class="jc-lbl">P.O. Qty</span><input type="text" id="gm-qty" value="${value('qty')}" placeholder="50000"></td>
+            <td><span class="jc-lbl">Machine</span><select id="gm-machine"><option value="">—</option>${machineOptions}</select></td>
+            <td><span class="jc-lbl">Ups</span><input type="text" id="gm-ups" value="${value('ups')}" placeholder="4"></td>
+          </tr>
+          <tr>
+            <td colspan="3"><span class="jc-lbl">Job Name *</span><input type="text" id="gm-name" value="${value('name')}" placeholder="e.g. Biscuit Box 200g"></td>
+            <td colspan="2"><span class="jc-lbl">Company *</span><input type="text" id="gm-client" value="${value('client')}" placeholder="Company name"></td>
+          </tr>
+          <tr>
+            <td colspan="2"><span class="jc-lbl">Job Type</span><select id="gm-type">${typeOptions}</select></td>
+            <td colspan="3"><span class="jc-lbl">Size / GSM</span><input type="text" id="gm-size" value="${value('size')}" placeholder="12x18 / 300gsm"></td>
+          </tr>
+          <tr>
+            <td colspan="2"><span class="jc-lbl">P.O. No.</span><input type="text" id="gm-ref" value="${value('ref')}" placeholder="Optional"></td>
+            <td colspan="3"><span class="jc-lbl">Job Code</span><input type="text" id="gm-jobcode" value="${value('jobcode')}" placeholder="SA-2026-001"></td>
+          </tr>
+          <tr>
+            <td colspan="2"><span class="jc-lbl">Paper</span><input type="text" id="gm-paper" value="${value('paper')}" placeholder="Paper name / board"></td>
+            <td><span class="jc-lbl">Sheets</span><input type="text" id="gm-sheets" value="${value('sheets')}" placeholder="12500"></td>
+            <td><span class="jc-lbl">Colors</span><input type="text" id="gm-colors" value="${value('colors') || value('color')}" placeholder="4C"></td>
+            <td><span class="jc-lbl">Unit Carton</span><input type="text" id="gm-cartonqty" value="${value('cartonqty')}" placeholder="100"></td>
+          </tr>
+          <tr>
+            <td><span class="jc-lbl">B.No</span><input type="text" id="gm-bno" value="${value('bno')}" placeholder="Batch"></td>
+            <td colspan="2"><span class="jc-lbl">Mfg Date</span><input type="date" id="gm-mfgdate" value="${value('mfgdate')}"></td>
+            <td colspan="2"><span class="jc-lbl">Exp Date</span><input type="date" id="gm-expdate" value="${value('expdate')}"></td>
+          </tr>
+        </table>
+        <div class="jc-extras" style="margin-top:12px;">
+          <div class="form-group"><label class="form-label">Coatings</label><div class="coating-grid">${COATING_OPTS.map(c => `<label><input type="checkbox" name="gm-coatings" value="${esc(c)}"${selected(c)}> ${esc(c)}</label>`).join('')}</div></div>
+          <div class="form-group"><label class="form-label">Notes / Special Instructions</label><textarea class="form-ta" id="gm-notes" placeholder="Any special instructions...">${value('notes')}</textarea></div>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="hgSaveManualJob(${id || 'null'})">Save Job</button></div>
+    </div>`);
+}
+
+async function hgSaveManualJob(id) {
+  const el = key => document.getElementById('gm-' + key);
+  const data = {
+    name: el('name').value.trim(), client: el('client').value.trim(), type: el('type').value,
+    dateissued: el('dateissued').value, deadline: el('deadline').value, qty: el('qty').value.trim(),
+    machine: el('machine').value, ups: el('ups').value.trim(), size: el('size').value.trim(),
+    ref: el('ref').value.trim(), jobcode: el('jobcode').value.trim(), paper: el('paper').value.trim(),
+    sheets: el('sheets').value.trim(), colors: el('colors').value.trim(), cartonqty: el('cartonqty').value.trim(),
+    bno: el('bno').value.trim(), mfgdate: el('mfgdate').value, expdate: el('expdate').value,
+    coatings: [...document.querySelectorAll('input[name="gm-coatings"]:checked')].map(c => c.value),
+    notes: el('notes').value.trim(),
+  };
+  if (!data.name || !data.client) return notify('Please enter the job name and company.');
+  try {
+    const saved = await api(id ? 'PUT' : 'POST', id ? '/api/guide-jobs/' + id : '/api/guide-jobs', data);
+    if (id) __hgManualJobsCache = (__hgManualJobsCache || []).map(j => Number(j.id) === Number(id) ? saved : j);
+    else __hgManualJobsCache = [saved, ...(__hgManualJobsCache || [])];
+    closeModal();
+    hgRenderManualJobs();
+    notify(id ? 'Job updated' : 'New job saved');
+  } catch (e) {
+    notify(e.message || 'Could not save the job');
+  }
 }
 
 // ── ported from tracker: Total In / Total Out / Manual Consumption reports ──
@@ -13375,17 +13568,27 @@ function hgJobsPeriodChange() {
   hgRenderJobsList();
 }
 
-// Jobs sub-tab switcher — All jobs vs Sales rollup.
+// Jobs sub-tab switcher — delivered archive, Guide-only New Jobs, or Sales.
 function hgJobsSubTab(name) {
   document.querySelectorAll('#hg-jobs-subtabs .hg-subtab').forEach(b => {
     b.classList.toggle('active', b.dataset.sub === name);
   });
   const content = document.getElementById('hg-jobs-content');
   const sales   = document.getElementById('hg-sales-pane');
+  const manual  = document.getElementById('hg-manual-jobs-pane');
   const isSales = (name === 'sales');
-  if (content) content.style.display = isSales ? 'none' : '';
+  const isManual = (name === 'manual');
+  if (content) content.style.display = (isSales || isManual) ? 'none' : '';
   if (sales)   sales.style.display   = isSales ? '' : 'none';
+  if (manual)  manual.style.display  = isManual ? '' : 'none';
+  // The sync control applies only to the Tracker archive/inventory, not to
+  // private New Jobs, so hide it while that personal workspace is open.
+  const syncActions = document.getElementById('hg-data-actions');
+  if (syncActions) syncActions.style.display = isManual ? 'none' : 'block';
+  const selectAll = document.getElementById('hg-jobs-selectall');
+  if (selectAll) selectAll.style.display = isManual ? 'none' : '';
   if (isSales) hgRenderSales();
+  if (isManual) hgRenderManualJobs();
 }
 
 // Compute Sales = Σ (MRP × delivered qty) across archived jobs, with
