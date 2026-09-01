@@ -12773,7 +12773,8 @@ async function hgRenderManualJobs() {
     const coatings = Array.isArray(j.coatings) ? j.coatings.filter(Boolean).join(', ') : String(j.coatings || '');
     const paper = j.paper || j.size || '';
     const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
-    const color = j.colors || j.color || '';
+    const noOfColors = (j.particulars || {}).no_of_colors;
+    const color = j.colors || j.color || (noOfColors && (noOfColors.quantity || noOfColors.details)) || '';
     return `
       <div class="hg-job-card" onclick="hgOpenManualJobForm(${Number(j.id)})" title="Click to edit">
         <div class="hg-job-head">
@@ -12795,77 +12796,32 @@ async function hgRenderManualJobs() {
   }).join('');
 }
 
-function hgManualField(id, value) {
-  return _hgEsc(value == null ? '' : value);
-}
-
 function hgOpenManualJobForm(id) {
   const j = id ? (__hgManualJobsCache || []).find(row => Number(row.id) === Number(id)) : {};
   if (id && !j) return notify('Job could not be found. Please reload this tab.');
-  const value = (key) => hgManualField(key, j?.[key]);
-  const type = String(j?.type || 'other').toLowerCase();
-  const coatings = Array.isArray(j?.coatings) ? j.coatings : [];
-  const selected = v => coatings.includes(v) ? ' checked' : '';
-  const machineOptions = MACHINES.map(m => `<option value="${esc(m)}"${j?.machine === m ? ' selected' : ''}>${esc(m)}</option>`).join('');
-  const typeOptions = HG_MANUAL_JOB_TYPES.map(t => `<option value="${t}"${type === t ? ' selected' : ''}>${hgManualJobTypeLabel(t)}</option>`).join('');
   openModal(`
-    <div class="modal modal-lg">
-      <div class="modal-head"><h2>${id ? 'Edit New Job' : 'Create New Job'}</h2><button class="modal-x" onclick="closeModal()">&times;</button></div>
-      <div class="modal-body" style="max-height:72vh;overflow:auto;">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">This job is saved only in Hamza Guide. It does not send anything to Tracker or use inventory.</div>
-        <table class="jc-form">
-          <tr>
-            <td><span class="jc-lbl">Date</span><input type="date" id="gm-dateissued" value="${value('dateissued') || new Date().toISOString().slice(0,10)}"></td>
-            <td><span class="jc-lbl">Deadline</span><input type="date" id="gm-deadline" value="${value('deadline')}"></td>
-            <td><span class="jc-lbl">P.O. Qty</span><input type="text" id="gm-qty" value="${value('qty')}" placeholder="50000"></td>
-            <td><span class="jc-lbl">Machine</span><select id="gm-machine"><option value="">—</option>${machineOptions}</select></td>
-            <td><span class="jc-lbl">Ups</span><input type="text" id="gm-ups" value="${value('ups')}" placeholder="4"></td>
-          </tr>
-          <tr>
-            <td colspan="3"><span class="jc-lbl">Job Name *</span><input type="text" id="gm-name" value="${value('name')}" placeholder="e.g. Biscuit Box 200g"></td>
-            <td colspan="2"><span class="jc-lbl">Company *</span><input type="text" id="gm-client" value="${value('client')}" placeholder="Company name"></td>
-          </tr>
-          <tr>
-            <td colspan="2"><span class="jc-lbl">Job Type</span><select id="gm-type">${typeOptions}</select></td>
-            <td colspan="3"><span class="jc-lbl">Size / GSM</span><input type="text" id="gm-size" value="${value('size')}" placeholder="12x18 / 300gsm"></td>
-          </tr>
-          <tr>
-            <td colspan="2"><span class="jc-lbl">P.O. No.</span><input type="text" id="gm-ref" value="${value('ref')}" placeholder="Optional"></td>
-            <td colspan="3"><span class="jc-lbl">Job Code</span><input type="text" id="gm-jobcode" value="${value('jobcode')}" placeholder="SA-2026-001"></td>
-          </tr>
-          <tr>
-            <td colspan="2"><span class="jc-lbl">Paper</span><input type="text" id="gm-paper" value="${value('paper')}" placeholder="Paper name / board"></td>
-            <td><span class="jc-lbl">Sheets</span><input type="text" id="gm-sheets" value="${value('sheets')}" placeholder="12500"></td>
-            <td><span class="jc-lbl">Colors</span><input type="text" id="gm-colors" value="${value('colors') || value('color')}" placeholder="4C"></td>
-            <td><span class="jc-lbl">Unit Carton</span><input type="text" id="gm-cartonqty" value="${value('cartonqty')}" placeholder="100"></td>
-          </tr>
-          <tr>
-            <td><span class="jc-lbl">B.No</span><input type="text" id="gm-bno" value="${value('bno')}" placeholder="Batch"></td>
-            <td colspan="2"><span class="jc-lbl">Mfg Date</span><input type="date" id="gm-mfgdate" value="${value('mfgdate')}"></td>
-            <td colspan="2"><span class="jc-lbl">Exp Date</span><input type="date" id="gm-expdate" value="${value('expdate')}"></td>
-          </tr>
-        </table>
-        <div class="jc-extras" style="margin-top:12px;">
-          <div class="form-group"><label class="form-label">Coatings</label><div class="coating-grid">${COATING_OPTS.map(c => `<label><input type="checkbox" name="gm-coatings" value="${esc(c)}"${selected(c)}> ${esc(c)}</label>`).join('')}</div></div>
-          <div class="form-group"><label class="form-label">Notes / Special Instructions</label><textarea class="form-ta" id="gm-notes" placeholder="Any special instructions...">${value('notes')}</textarea></div>
-        </div>
+    <div class="modal modal-card" onclick="event.stopPropagation()">
+      <h2 style="text-align:center;letter-spacing:1px;">${id ? 'EDIT JOB CARD' : 'NEW JOB CARD'}</h2>
+      ${jobForm(j || {})}
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="hgSaveManualJob(${id || 'null'})">Save Job</button>
       </div>
-      <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="hgSaveManualJob(${id || 'null'})">Save Job</button></div>
     </div>`);
+  // This only enables the original form's visual helpers. The private save
+  // endpoint below never issues stock or sends anything to Tracker.
+  updateStockHint();
+  renderCutPreview();
 }
 
 async function hgSaveManualJob(id) {
-  const el = key => document.getElementById('gm-' + key);
-  const data = {
-    name: el('name').value.trim(), client: el('client').value.trim(), type: el('type').value,
-    dateissued: el('dateissued').value, deadline: el('deadline').value, qty: el('qty').value.trim(),
-    machine: el('machine').value, ups: el('ups').value.trim(), size: el('size').value.trim(),
-    ref: el('ref').value.trim(), jobcode: el('jobcode').value.trim(), paper: el('paper').value.trim(),
-    sheets: el('sheets').value.trim(), colors: el('colors').value.trim(), cartonqty: el('cartonqty').value.trim(),
-    bno: el('bno').value.trim(), mfgdate: el('mfgdate').value, expdate: el('expdate').value,
-    coatings: [...document.querySelectorAll('input[name="gm-coatings"]:checked')].map(c => c.value),
-    notes: el('notes').value.trim(),
-  };
+  const data = getFormData();
+  // The original Tracker job form derives a job's type from its name. Keep
+  // that same behaviour here so the New Jobs type filter stays useful with
+  // the identical card, without adding/removing fields from the card itself.
+  data.type = _hgJobType(data) || 'other';
+  const selectedItem = data.inventory_item_id ? inventory.find(i => i.id === data.inventory_item_id) : null;
+  if (selectedItem) data.paper = paperItemLabel(selectedItem);
   if (!data.name || !data.client) return notify('Please enter the job name and company.');
   try {
     const saved = await api(id ? 'PUT' : 'POST', id ? '/api/guide-jobs/' + id : '/api/guide-jobs', data);
