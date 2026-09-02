@@ -925,6 +925,22 @@ app.put('/api/guide-jobs/:id', requireWriteUser, async (req, res) => {
   }
 });
 
+app.delete('/api/guide-jobs/:id', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid job' });
+    const sql = getDb();
+    const rows = await sql`DELETE FROM guide_manual_jobs WHERE id=${id} RETURNING id, data`;
+    if (!rows.length) return res.status(404).json({ error: 'Guide job not found' });
+    await logAudit(sql, req, { action: 'guide_job.delete', entityType: 'guide_job', entityId: id, summary: `Deleted Guide job: ${rows[0].data.name || 'Untitled'}` });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Sync from Tracker ────────────────────────────────────────
 // Pulls jobs + inventory from the tracker's DB into local tracker_*
 // mirrors (JSON blobs — schema-agnostic so tracker schema changes never

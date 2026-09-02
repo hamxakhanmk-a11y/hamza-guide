@@ -12778,8 +12778,9 @@ async function hgRenderManualJobs() {
     return `
       <div class="hg-job-card" onclick="hgOpenManualJobForm(${Number(j.id)})" title="Click to edit">
         <div class="hg-job-head">
-          <span class="hg-job-id">#${_hgEsc(j.id)} <span class="hg-job-mil">NEW</span></span>
+          <span class="hg-job-id"><span class="hg-job-mil">NEW JOB</span></span>
           <span class="hg-job-mrp">${_hgEsc(hgManualJobTypeLabel(j.type))}</span>
+          <button class="btn btn-sm btn-danger" style="margin-left:auto;" onclick="event.stopPropagation(); hgDeleteManualJob(${Number(j.id)})">Delete</button>
         </div>
         <div class="hg-job-name">${_hgEsc(j.name)}</div>
         <div class="hg-job-client">${_hgEsc(j.client)}${codeChip}</div>
@@ -12799,10 +12800,13 @@ async function hgRenderManualJobs() {
 function hgOpenManualJobForm(id) {
   const j = id ? (__hgManualJobsCache || []).find(row => Number(row.id) === Number(id)) : {};
   if (id && !j) return notify('Job could not be found. Please reload this tab.');
+  // Database IDs are only internal keys for saving/editing; New Jobs never
+  // shows a job number on the card itself or on the printed-style form.
+  const formJob = { ...(j || {}), id: undefined };
   openModal(`
     <div class="modal modal-card" onclick="event.stopPropagation()">
       <h2 style="text-align:center;letter-spacing:1px;">${id ? 'EDIT JOB CARD' : 'NEW JOB CARD'}</h2>
-      ${jobForm(j || {})}
+      ${jobForm(formJob)}
       <div class="modal-actions">
         <button class="btn" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="hgSaveManualJob(${id || 'null'})">Save Job</button>
@@ -12832,6 +12836,20 @@ async function hgSaveManualJob(id) {
     notify(id ? 'Job updated' : 'New job saved');
   } catch (e) {
     notify(e.message || 'Could not save the job');
+  }
+}
+
+async function hgDeleteManualJob(id) {
+  const job = (__hgManualJobsCache || []).find(j => Number(j.id) === Number(id));
+  const label = job?.name ? `“${job.name}”` : 'this job';
+  if (!confirm(`Delete ${label} from New Jobs?\n\nThis cannot be undone.`)) return;
+  try {
+    await api('DELETE', '/api/guide-jobs/' + id);
+    __hgManualJobsCache = (__hgManualJobsCache || []).filter(j => Number(j.id) !== Number(id));
+    hgRenderManualJobs();
+    notify('Job deleted');
+  } catch (e) {
+    notify(e.message || 'Could not delete the job');
   }
 }
 
