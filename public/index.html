@@ -12476,6 +12476,7 @@ function hgShowTab(name) {
     const btn = document.getElementById('hg-tab-' + t);
     if (btn) btn.classList.toggle('active', t === name);
   });
+  requestAnimationFrame(() => hgSyncFlowIndicator(document.getElementById('hg-tabs')));
   const inboxPane = document.getElementById('hg-inbox-pane');
   const colorPane = document.getElementById('hg-color-pane');
   const jobsList  = document.getElementById('hg-jobs-list-pane');
@@ -12500,6 +12501,9 @@ function hgShowTab(name) {
   }
   else if (name === 'inventory') { if (typeof closeCalculator === 'function') closeCalculator(); hgRenderInventoryList(); }
   else if ((name === 'inbox' || name === 'color') && typeof closeCalculator === 'function') closeCalculator();
+  // Jobs/Inventory sub-tabs may have been hidden at page load, so measure
+  // them after their pane becomes visible as well as the main navigation.
+  requestAnimationFrame(hgSyncAllFlowIndicators);
 }
 
 // ── Data caches for the Jobs / Inventory tabs ──────────────────
@@ -12841,7 +12845,6 @@ async function hgRenderManualJobs() {
     }
     return true;
   });
-  requestAnimationFrame(() => hgSyncFlowIndicator(document.getElementById('hg-tabs')));
   if (count) count.textContent = (q || companyFilter || typeFilter) ? `${rows.length} of ${__hgManualJobsCache.length}` : String(__hgManualJobsCache.length);
   if (!rows.length) {
     grid.innerHTML = `<div class="hg-data-empty">${__hgManualJobsCache.length ? 'No matching jobs.' : 'No private jobs yet. Click <b>+ Create Job</b> to save your first one.'}</div>`;
