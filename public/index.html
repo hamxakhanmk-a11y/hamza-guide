@@ -12746,7 +12746,11 @@ async function hgRenderJobsList() {
     groupCounts[k] = (groupCounts[k] || 0) + 1;
   }
   __hgLastJobRows = rows;
-  if (count) count.textContent = (q || comp || type) ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
+  // Show "N of M" whenever ANY filter is narrowing the view — including
+  // Period. Previous version only checked search/company/type, so with
+  // Period = Today the pill still showed the full-archive count.
+  const anyFilter = q || comp || type || period || dateFrom || dateTo;
+  if (count) count.textContent = anyFilter ? `${rows.length} of ${__hgJobsCache.length}` : `${__hgJobsCache.length}`;
   if (!rows.length) {
     grid.innerHTML = '<div class="hg-data-empty">' + (__hgJobsCache.length ? 'No matches.' : 'No jobs synced yet. Click <b>Sync from Tracker</b> above.') + '</div>';
     return;
