@@ -1099,6 +1099,45 @@ async function syncTrackerHandler(req, res) {
 app.post('/api/sync-tracker', syncTrackerHandler);
 app.get('/api/sync-tracker',  syncTrackerHandler);
 
+// GET /api/sync-diff — compare tracker's delivered jobs vs our mirror.
+// Read-only against both DBs; useful for figuring out why counts don't
+// match. Returns: which delivered-in-tracker ids we're missing, which
+// ids sit in our mirror but aren't delivered / don't exist in tracker.
+app.get('/api/sync-diff', async (req, res) => {
+  const trackerUrl = process.env.TRACKER_DATABASE_URL;
+  if (!trackerUrl) return res.status(500).json({ error: 'TRACKER_DATABASE_URL not set' });
+  try {
+    await dbReady;
+    const local   = getDb();
+    const tracker = neon(trackerUrl);
+    // Try WHERE deleted_at IS NULL first; if the column doesn't exist,
+    // fall back to no deleted filter. Older tracker schemas won't have it.
+    let trackerRows;
+    try {
+      trackerRows = await tracker`SELECT id FROM jobs WHERE stage_index = 7 AND deleted_at IS NULL ORDER BY id`;
+    } catch (_) {
+      trackerRows = await tracker`SELECT id FROM jobs WHERE stage_index = 7 ORDER BY id`;
+    }
+    const mirrorRows = await local`SELECT id FROM tracker_jobs ORDER BY id`;
+    const trackerIds = trackerRows.map(r => r.id);
+    const mirrorIds  = mirrorRows.map(r => r.id);
+    const trackerSet = new Set(trackerIds);
+    const mirrorSet  = new Set(mirrorIds);
+    const missing = trackerIds.filter(id => !mirrorSet.has(id));   // in tracker → should be in mirror
+    const extra   = mirrorIds.filter(id => !trackerSet.has(id));   // in mirror → tracker doesn't have (or not stage 7)
+    res.json({
+      tracker_delivered: trackerIds.length,
+      mirror_count:      mirrorIds.length,
+      missing_from_mirror: missing,       // add via Sync (if new) or refetch
+      extra_in_mirror:     extra,         // deleted in tracker OR de-staged OR grandfathered
+      match: missing.length === 0 && extra.length === 0,
+    });
+  } catch (err) {
+    console.error('sync-diff error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/jobs/:id — removes ONE job from Hamza Guide's own
 // tracker_jobs mirror. Does not touch the tracker database. Uses
 // this local endpoint (registered before the tracker's DELETE at

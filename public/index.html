@@ -1750,6 +1750,12 @@
   <div id="hg-data-actions" style="display:none;">
     <div class="hg-sync-row">
       <button id="hg-sync-btn" onclick="hgSyncTracker()">&#128260; Sync from Tracker</button>
+      <button id="hg-diff-btn" onclick="hgCompareWithTracker()"
+              style="background:transparent;color:var(--text2);border:1px solid var(--border);
+                     padding:7px 12px;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;
+                     font-family:var(--font);">
+        &#9878; Compare counts
+      </button>
       <span id="hg-sync-status" style="font-size:12px; color:var(--text2);">
         Pulls delivered jobs + inventory into your archive. Once here, they stay put &mdash; your edits are safe from future syncs.
       </span>
@@ -12569,6 +12575,38 @@ async function hgDeleteSelected() {
     if (typeof notify === 'function') notify('Deleted ' + data.deleted + ' of ' + ids.length);
   } catch (e) {
     alert('Delete failed: ' + (e && e.message || e));
+  }
+}
+
+// Compare tracker's delivered count against our mirror; show missing /
+// extra ids inline in the sync status area so the user can see exactly
+// where the count mismatch comes from.
+async function hgCompareWithTracker() {
+  const status = document.getElementById('hg-sync-status');
+  if (!status) return;
+  status.textContent = 'Comparing tracker vs archive…';
+  status.style.color = 'var(--text2)';
+  try {
+    const res = await fetch('/api/sync-diff');
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'diff failed');
+    const missCount = (d.missing_from_mirror || []).length;
+    const extraCount = (d.extra_in_mirror   || []).length;
+    let msg = `Tracker: ${d.tracker_delivered} delivered · Mirror: ${d.mirror_count}`;
+    if (d.match) {
+      msg = '✅ ' + msg + ' — perfect match';
+      status.style.color = '#166534';
+    } else {
+      msg = '⚠️ ' + msg + '\n';
+      if (missCount)  msg += `\nMissing from mirror (${missCount}): ${(d.missing_from_mirror.slice(0, 30)).join(', ')}${missCount > 30 ? ' … +' + (missCount - 30) + ' more' : ''}`;
+      if (extraCount) msg += `\nExtra in mirror (${extraCount}): ${(d.extra_in_mirror.slice(0, 30)).join(', ')}${extraCount > 30 ? ' … +' + (extraCount - 30) + ' more' : ''}`;
+      status.style.color = '#A32D2D';
+    }
+    status.style.whiteSpace = 'pre-wrap';
+    status.textContent = msg;
+  } catch (e) {
+    status.style.color = '#A32D2D';
+    status.textContent = 'Compare failed: ' + (e && e.message || e);
   }
 }
 
