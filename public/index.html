@@ -1784,7 +1784,7 @@
     </div>
     <div id="hg-jobs-content">
       <div class="hg-filters">
-        <input id="hg-jobs-search"  class="hg-search"  placeholder="Search name, code, machine&hellip;" oninput="hgRenderJobsList()">
+        <input id="hg-jobs-search"  class="hg-search"  placeholder="Search #id, name, code, machine&hellip;" oninput="hgRenderJobsList()">
         <select id="hg-jobs-company" class="hg-select" onchange="hgRenderJobsList()">
           <option value="">All companies</option>
         </select>
@@ -12767,7 +12767,7 @@ async function hgRenderJobsList() {
       if (dateTo   && dt >= dateTo)   return false;
     }
     if (q) {
-      const hay = `${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''} ${j.mrp||''}`.toLowerCase();
+      const hay = `${j.id||''} ${j.name||''} ${j.client||''} ${j.jobcode||''} ${j.paper||''} ${j.machine||''} ${j.ref||''} ${j.mrp||''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
