@@ -977,23 +977,24 @@ async function syncTrackerHandler(req, res) {
     let normalInventoryIds = new Set();
     let normalInventoryCount = 0;
     let inventorySyncReady = false;
-    // Jobs mirror: INSERT ... ON CONFLICT DO NOTHING → freeze once pulled.
-    // Inventory mirror: INSERT ... ON CONFLICT DO UPDATE → refresh every
-    // sync so current_balance / supplier / reorder stay live.
-    async function jobsInsertOnlyBatch(rows) {
-      let added = 0;
+    // Jobs mirror: full refresh — UPSERT current delivered set + PRUNE
+    // any mirror row not in that set. Mirrors the tracker's live
+    // delivered universe (jobs that got un-delivered or deleted are
+    // dropped so counts always match).
+    // Inventory mirror: UPSERT every sync so current_balance / supplier
+    // / reorder stay live.
+    async function jobsUpsertBatch(rows) {
       for (let i = 0; i < rows.length; i += CHUNK) {
         const batch = rows.slice(i, i + CHUNK);
         const stmts = batch.map(r => local`
           INSERT INTO tracker_jobs (id, data, synced_at)
           VALUES (${r.id}, ${JSON.stringify(r)}::jsonb, NOW())
-          ON CONFLICT (id) DO NOTHING
-          RETURNING id
+          ON CONFLICT (id) DO UPDATE
+            SET data = EXCLUDED.data, synced_at = NOW()
         `);
-        const results = await local.transaction(stmts);
-        for (const r of results) added += (r?.length || 0);
+        await local.transaction(stmts);
       }
-      return added;
+      return rows.length;
     }
     async function inventoryUpsertBatch(rows) {
       for (let i = 0; i < rows.length; i += CHUNK) {
@@ -1008,13 +1009,56 @@ async function syncTrackerHandler(req, res) {
       }
       return rows.length;
     }
-    // Jobs — delivered only (stage_index = 7, the "Delivered" stage
-    // per STAGES[] above). Frozen once pulled.
+    // Jobs — delivered only (stage_index = 7, deleted_at IS NULL when
+    // the column exists). Full refresh + prune so the mirror always
+    // matches the tracker's current delivered universe. Before upsert,
+    // diff each incoming row against the existing mirror row and log
+    // any change so the history modal can show tracker-side edits.
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
-      const rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 ORDER BY id`;
-      result.jobs_new  = await jobsInsertOnlyBatch(rows);
-      result.jobs      = rows.length;
+      let rows;
+      try {
+        rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 AND deleted_at IS NULL ORDER BY id`;
+      } catch (_) {
+        // Older schema without deleted_at
+        rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 ORDER BY id`;
+      }
+      const deliveredIds = rows.map(r => r.id);
+      // History diff pass — one bulk read of the current mirror, then
+      // compute diffs in memory, then batch-insert the change rows.
+      try {
+        await hgEnsureHistoryTable(local);
+        const existing = await local`SELECT id, data FROM tracker_jobs`;
+        const existingMap = new Map(existing.map(r => [r.id, r.data]));
+        const histRows = [];
+        for (const r of rows) {
+          const old = existingMap.get(r.id);
+          if (!old) continue; // new arrivals — no diff to record
+          const changes = hgDiffJob(old, r);
+          if (changes.length) histRows.push({ job_id: r.id, changes });
+        }
+        for (let i = 0; i < histRows.length; i += CHUNK) {
+          const batch = histRows.slice(i, i + CHUNK);
+          const stmts = batch.map(h => local`
+            INSERT INTO hg_job_history (job_id, source, changes)
+            VALUES (${h.job_id}, 'sync', ${JSON.stringify(h.changes)}::jsonb)
+          `);
+          await local.transaction(stmts);
+        }
+        result.history_logged = histRows.length;
+      } catch (histErr) { console.warn('history log failed (sync):', histErr.message); }
+      result.jobs_refreshed = await jobsUpsertBatch(rows);
+      // PRUNE: any mirror row whose id isn't in the current delivered
+      // set gets removed — so a job un-delivered in tracker also
+      // disappears here on the next sync.
+      if (deliveredIds.length) {
+        const pruned = await local`DELETE FROM tracker_jobs WHERE id != ALL(${deliveredIds}::int[]) RETURNING id`;
+        result.jobs_pruned = pruned.length;
+      } else {
+        const pruned = await local`DELETE FROM tracker_jobs RETURNING id`;
+        result.jobs_pruned = pruned.length;
+      }
+      result.jobs = rows.length;
     } catch (e) { result.jobs_error = e.message; }
     // Inventory — Guide is for full normal sheets/packets only. Offcuts and
     // their issuances remain available in Tracker but are deliberately kept
@@ -1074,7 +1118,7 @@ async function syncTrackerHandler(req, res) {
       }
       result.transactions_refreshed = rows.length;
     } catch (e) { result.transactions_error = e.message; }
-    result.mode = 'jobs frozen; normal inventory + normal issuances refreshed';
+    result.mode = 'jobs refreshed + pruned to tracker\'s current delivered set; normal inventory + normal issuances refreshed';
     // Read archive + tracker totals in isolated try/catch blocks so a
     // failure on one query never wipes out the count of another.
     try { const [n] = await local`SELECT COUNT(*)::int AS n FROM tracker_jobs`;            result.archive_jobs      = n?.n ?? 0; } catch (_) {}
@@ -1177,6 +1221,60 @@ app.post('/api/jobs/bulk-delete', async (req, res) => {
   }
 });
 
+// Fields we track in per-job history diffs. Anything mutable via the
+// job card form + the derived stage/particulars fields that flow in
+// from the tracker. Skips columns that change constantly and would
+// spam the log (created_at, log, stages timestamps).
+const HG_HISTORY_FIELDS = [
+  'name','client','jobcode','ref','dateissued','deadline','size','ups','sheets','qty',
+  'paper','machine','coatings','priority','delqty','cartonqty','notes','mrp',
+  'bno','mfgdate','expdate','stage_index','particulars'
+];
+function hgDiffJob(oldData, newData) {
+  const changes = [];
+  for (const f of HG_HISTORY_FIELDS) {
+    const a = oldData ? oldData[f] : undefined;
+    const b = newData ? newData[f] : undefined;
+    if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) {
+      changes.push({ field: f, from: a ?? null, to: b ?? null });
+    }
+  }
+  return changes;
+}
+async function hgEnsureHistoryTable(sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS hg_job_history (
+      id          SERIAL PRIMARY KEY,
+      job_id      INTEGER NOT NULL,
+      source      TEXT NOT NULL,
+      changes     JSONB NOT NULL,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS hg_job_history_job_idx ON hg_job_history (job_id, id DESC)`;
+}
+
+// GET /api/jobs/:id/history — chronological change log for one job.
+app.get('/api/jobs/:id/history', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    await dbReady;
+    const sql = getDb();
+    await hgEnsureHistoryTable(sql);
+    const rows = await sql`
+      SELECT id, source, changes, created_at
+        FROM hg_job_history
+       WHERE job_id = ${id}
+       ORDER BY id DESC
+    `;
+    res.json(rows);
+  } catch (err) {
+    console.error('history read error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/jobs/:id — Hamza Guide's local edit endpoint. Writes ONLY
 // to our own tracker_jobs mirror; the tracker's real jobs table is
 // never touched. Registered before the tracker's PUT (line ~1036) so
@@ -1198,6 +1296,18 @@ app.put('/api/jobs/:id', async (req, res) => {
       if (v !== undefined) merged[k] = v;
     }
     merged.id = id;
+    // Record local edit in history BEFORE the update, so a diff row
+    // appears even if the write below throws.
+    try {
+      await hgEnsureHistoryTable(sql);
+      const changes = hgDiffJob(existing.data, merged);
+      if (changes.length) {
+        await sql`
+          INSERT INTO hg_job_history (job_id, source, changes)
+          VALUES (${id}, 'local', ${JSON.stringify(changes)}::jsonb)
+        `;
+      }
+    } catch (histErr) { console.warn('history log failed (local):', histErr.message); }
     await sql`
       UPDATE tracker_jobs
       SET data = ${JSON.stringify(merged)}::jsonb, synced_at = NOW()

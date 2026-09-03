@@ -1530,6 +1530,31 @@
     font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
     padding: 2px 6px; border-radius: 8px; vertical-align: middle;
   }
+  /* Small clock button that opens per-job change history. Sits in
+     the card head; stops propagation so it doesn't fire the card's
+     edit-modal onclick. */
+  .hg-job-hist-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text2); padding: 3px 7px;
+    border-radius: 10px; cursor: pointer;
+    font-size: 11px; line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease;
+    font-family: var(--font);
+  }
+  .hg-job-hist-btn:hover { background: var(--brand-soft); color: var(--brand); border-color: var(--brand-soft); }
+  /* History modal entry — source-tinted left border + change list. */
+  .hg-hist-entry { border-left: 3px solid var(--brand); padding: 10px 12px; margin-bottom: 10px; background: var(--bg2); border-radius: 6px; }
+  .hg-hist-entry.sync  { border-left-color: #166534; }
+  .hg-hist-entry.local { border-left-color: #A32D2D; }
+  .hg-hist-head { display: flex; justify-content: space-between; margin-bottom: 6px; align-items: baseline; gap: 10px; }
+  .hg-hist-src  { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 800; }
+  .hg-hist-src.sync  { color: #166534; }
+  .hg-hist-src.local { color: #A32D2D; }
+  .hg-hist-when { color: var(--text2); font-size: 11px; }
+  .hg-hist-chg  { margin: 3px 0; font-size: 12px; word-break: break-word; }
+  .hg-hist-chg b { color: var(--text); }
+  .hg-hist-from { color: var(--text2); }
+  .hg-hist-to   { color: var(--text); font-weight: 500; }
   /* Inventory badges (Low / Out / Offcut). Reuses the Jobs card grid
      via .hg-jobs-grid + .hg-job-card so mobile layout is identical.
      .hg-static-card removes the pointer/hover-lift since inv items
@@ -1757,7 +1782,7 @@
         &#9878; Compare counts
       </button>
       <span id="hg-sync-status" style="font-size:12px; color:var(--text2);">
-        Pulls delivered jobs + inventory into your archive. Once here, they stay put &mdash; your edits are safe from future syncs.
+        Refreshes to match the tracker's current delivered set. Jobs un-delivered / deleted in the tracker are removed here. Shipment data (delqty, particulars) updates on every sync.
       </span>
     </div>
   </div>
@@ -12820,7 +12845,10 @@ async function hgRenderJobsList() {
                title="Select for bulk actions">
         <div class="hg-job-head">
           <span class="hg-job-id">#${_hgEsc(j.id)}${isMil ? '<span class="hg-job-mil" title="Part of a mil / group job">MIL</span>' : ''}</span>
-          ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
+          <span style="display:inline-flex;gap:8px;align-items:center;">
+            ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
+            <button class="hg-job-hist-btn" onclick="event.stopPropagation(); hgOpenHistory(${j.id})" title="View change history">&#128337;</button>
+          </span>
         </div>
         <div class="hg-job-name">${_hgEsc(j.name)}</div>
         <div class="hg-job-client">${_hgEsc(j.client)}${codeChip}</div>
@@ -13980,6 +14008,62 @@ function hgInvSubTab(name) {
     console.warn('[hg] inv sub-tab error:', e);
     const target = document.getElementById(paneId);
     if (target) target.innerHTML = `<div class="hg-data-empty">Report failed to load: ${_hgEsc(e && e.message || e)}</div>`;
+  }
+}
+
+// Open the per-job change-history modal. Fetches /api/jobs/:id/history
+// which returns rows ordered newest-first. Each entry shows source
+// (SYNC = came from tracker on a sync, LOCAL = edited here), a
+// timestamp, and a list of field diffs (from → to).
+async function hgOpenHistory(id) {
+  if (typeof openModal !== 'function') { alert('Modal helper unavailable.'); return; }
+  openModal(`
+    <div class="modal" onclick="event.stopPropagation()" style="max-width:620px;">
+      <h2 style="margin-bottom:14px;">Job #${_hgEsc(id)} &middot; Change History</h2>
+      <div id="hg-hist-body" style="max-height:60vh;overflow-y:auto;font-size:12px;color:var(--text);">
+        Loading&hellip;
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  `);
+  try {
+    const res = await fetch(`/api/jobs/${id}/history`);
+    const rows = await res.json();
+    if (!res.ok) throw new Error(rows.error || 'History fetch failed');
+    const body = document.getElementById('hg-hist-body');
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">No changes recorded yet. History starts logging from now on.</div>';
+      return;
+    }
+    const fmtVal = (v) => {
+      if (v === null || v === undefined || v === '') return '<em style="color:var(--text3);">(empty)</em>';
+      const s = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+      return _hgEsc(s.length > 120 ? s.slice(0, 117) + '…' : s);
+    };
+    body.innerHTML = rows.map(r => {
+      const isSync = r.source === 'sync';
+      const cls = isSync ? 'sync' : 'local';
+      const label = isSync ? 'From tracker (sync)' : 'Your edit here';
+      const when = new Date(r.created_at).toLocaleString();
+      const changes = (r.changes || []).map(c => `
+        <div class="hg-hist-chg"><b>${_hgEsc(c.field)}:</b> <span class="hg-hist-from">${fmtVal(c.from)}</span> &rarr; <span class="hg-hist-to">${fmtVal(c.to)}</span></div>
+      `).join('');
+      return `
+        <div class="hg-hist-entry ${cls}">
+          <div class="hg-hist-head">
+            <span class="hg-hist-src ${cls}">${label}</span>
+            <span class="hg-hist-when">${_hgEsc(when)}</span>
+          </div>
+          ${changes || '<div class="hg-hist-chg" style="color:var(--text2);">(no field-level detail)</div>'}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    const body = document.getElementById('hg-hist-body');
+    if (body) body.innerHTML = `<div style="color:#A32D2D;padding:16px;">Failed to load: ${_hgEsc(e && e.message || e)}</div>`;
   }
 }
 
