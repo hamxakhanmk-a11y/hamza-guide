@@ -1555,7 +1555,40 @@
   .hg-hist-chg b { color: var(--text); }
   .hg-hist-from { color: var(--text2); }
   .hg-hist-to   { color: var(--text); font-weight: 500; }
-  /* Shipments table (inside the deliveries modal). */
+  /* Shade Card pill next to the MIL pill in the card head. */
+  .hg-job-shade {
+    display: inline-block; margin-left: 6px;
+    background: #dcfce7; color: #166534;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+    padding: 2px 6px; border-radius: 8px; vertical-align: middle;
+    text-transform: uppercase;
+  }
+  /* SHIPMENTS block at the bottom of each card (matches the tracker's
+     Client view). Amber cream background, one row per shipment, total
+     at the bottom. */
+  .hg-job-shp {
+    margin-top: 10px; padding: 9px 12px;
+    background: #fef3c7; border-radius: 8px; font-size: 12px;
+    color: #0d0d0d;
+  }
+  .hg-job-shp-title {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+    color: #92400e; margin-bottom: 6px; text-transform: uppercase;
+  }
+  .hg-job-shp-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 3px 0; color: #0d0d0d;
+  }
+  .hg-job-shp-row .date { color: #6b6960; font-size: 11px; }
+  .hg-job-shp-row .qty  { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .hg-job-shp-total {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-top: 6px; margin-top: 4px;
+    border-top: 1px dashed #d97706;
+    font-weight: 800; color: #92400e;
+  }
+  .hg-job-shp-total .qty { font-variant-numeric: tabular-nums; }
+  /* Shipments table (still used inside the deliveries modal). */
   .hg-shp-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
   .hg-shp-table th { background: var(--bg2); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); color: #0d0d0d; white-space: nowrap; }
   .hg-shp-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: #0d0d0d; }
@@ -12849,16 +12882,23 @@ async function hgRenderJobsList() {
     const codeChip = j.jobcode ? `<span class="hg-job-code">${_hgEsc(j.jobcode)}</span>` : '';
     const isMil = (groupCounts[groupKey(j)] || 0) > 1;
     const isSel = __hgSelectedJobs.has(j.id);
+    const isShade = !!j.is_shade_card;
+    // Shipments block source data
+    const shipList = Array.isArray(j.deliveries) ? j.deliveries : [];
+    const shipTotal = shipList.reduce((s, d) => s + (parseFloat(d.cartons) || 0), 0);
     return `
       <div class="hg-job-card ${isSel ? 'hg-selected' : ''}" data-hg-id="${j.id}" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
         <input type="checkbox" class="hg-job-select" data-hg-id="${j.id}" ${isSel ? 'checked' : ''}
                onclick="event.stopPropagation(); hgToggleSelect(${j.id}, this.checked)"
                title="Select for bulk actions">
         <div class="hg-job-head">
-          <span class="hg-job-id">#${_hgEsc(j.id)}${isMil ? '<span class="hg-job-mil" title="Part of a mil / group job">MIL</span>' : ''}</span>
+          <span class="hg-job-id">
+            #${_hgEsc(j.id)}
+            ${isMil ? '<span class="hg-job-mil" title="Part of a mil / group job">MIL</span>' : ''}
+            ${isShade ? '<span class="hg-job-shade" title="Shade card — colour approval run, not a production print">&#127912; Shade Card</span>' : ''}
+          </span>
           <span style="display:inline-flex;gap:6px;align-items:center;">
             ${j.mrp ? `<span class="hg-job-mrp">MRP ${_hgEsc(j.mrp)}</span>` : ''}
-            <button class="hg-job-hist-btn" onclick="event.stopPropagation(); hgOpenShipments(${j.id})" title="View shipments / deliveries">&#128666;</button>
             <button class="hg-job-hist-btn" onclick="event.stopPropagation(); hgOpenHistory(${j.id})" title="View change history">&#128337;</button>
           </span>
         </div>
@@ -12873,6 +12913,20 @@ async function hgRenderJobsList() {
           <div class="hg-spec"><span class="hg-spec-key">Delivered Qty</span><span class="hg-spec-val">${_hgEsc(j.delqty) || '&mdash;'}</span></div>
           ${coatings ? `<div class="hg-spec wide"><span class="hg-spec-key">Coatings</span><span class="hg-spec-val">${_hgEsc(coatings)}</span></div>` : ''}
         </div>
+        ${shipList.length ? `
+        <div class="hg-job-shp">
+          <div class="hg-job-shp-title">&#128666; Shipments</div>
+          ${shipList.map(d => `
+            <div class="hg-job-shp-row">
+              <span class="date">${_hgEsc(d.date || '')}</span>
+              <span class="qty">${(parseFloat(d.cartons) || 0).toLocaleString('en-IN')} cartons</span>
+            </div>
+          `).join('')}
+          <div class="hg-job-shp-total">
+            <span>Total shipped</span>
+            <span class="qty">${shipTotal.toLocaleString('en-IN')} cartons</span>
+          </div>
+        </div>` : ''}
       </div>
     `;
   }).join('');
