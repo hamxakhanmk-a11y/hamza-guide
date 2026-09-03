@@ -1563,6 +1563,16 @@
     padding: 2px 6px; border-radius: 8px; vertical-align: middle;
     text-transform: uppercase;
   }
+  /* Stage / status pill on card head — green for delivered, amber
+     for in-progress-with-partial-shipments. */
+  .hg-job-stage {
+    display: inline-block; margin-left: 6px;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 8px; vertical-align: middle;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .hg-job-stage.delivered   { background: #166534; color: #fff; }
+  .hg-job-stage.in-progress { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
   /* SHIPMENTS block — matches the tracker's Client-view swatch exactly:
      #fff8ed cream background, #fed7aa border, #9a3412 title text. */
   .hg-job-shp {
@@ -12885,6 +12895,15 @@ async function hgRenderJobsList() {
     // Shipments block source data
     const shipList = Array.isArray(j.deliveries) ? j.deliveries : [];
     const shipTotal = shipList.reduce((s, d) => s + (parseFloat(d.cartons) || 0), 0);
+    // Stage / status pill — DELIVERED (green) when stage=7, or
+    // IN: <stage name> (amber) when still in production but has
+    // started partial shipping. STAGES is defined at the top of the
+    // tracker JS we forked.
+    const stageIdx = Number(j.stage_index || 0);
+    const stageName = (typeof STAGES !== 'undefined' && STAGES[stageIdx]) ? STAGES[stageIdx] : '';
+    const stagePill = stageIdx === 7
+      ? '<span class="hg-job-stage delivered" title="Fully delivered per the tracker">Delivered</span>'
+      : `<span class="hg-job-stage in-progress" title="Job still in production — partial shipments only">In: ${_hgEsc(stageName || 'Stage ' + stageIdx)}</span>`;
     return `
       <div class="hg-job-card ${isSel ? 'hg-selected' : ''}" data-hg-id="${j.id}" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
         <input type="checkbox" class="hg-job-select" data-hg-id="${j.id}" ${isSel ? 'checked' : ''}
@@ -12893,6 +12912,7 @@ async function hgRenderJobsList() {
         <div class="hg-job-head">
           <span class="hg-job-id">
             #${_hgEsc(j.id)}
+            ${stagePill}
             ${isMil ? '<span class="hg-job-mil" title="Part of a mil / group job">MIL</span>' : ''}
             ${isShade ? '<span class="hg-job-shade" title="Shade card — colour approval run, not a production print">&#127912; Shade Card</span>' : ''}
           </span>

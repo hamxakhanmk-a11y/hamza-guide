@@ -1016,12 +1016,27 @@ async function syncTrackerHandler(req, res) {
     // any change so the history modal can show tracker-side edits.
     try {
       await local`CREATE TABLE IF NOT EXISTS tracker_jobs (id INTEGER PRIMARY KEY, data JSONB NOT NULL, synced_at TIMESTAMPTZ DEFAULT NOW())`;
+      // Sync criterion: fully delivered (stage=7) OR any partial-shipment
+      // in-progress job (deliveries[] has entries). Second bucket catches
+      // multi-shipment repeat orders that started shipping before the last
+      // delivery moved the job to stage 7.
       let rows;
       try {
-        rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 AND deleted_at IS NULL ORDER BY id`;
+        rows = await tracker`
+          SELECT * FROM jobs
+          WHERE (stage_index = 7
+                 OR jsonb_array_length(COALESCE(deliveries, '[]'::jsonb)) > 0)
+            AND deleted_at IS NULL
+          ORDER BY id
+        `;
       } catch (_) {
         // Older schema without deleted_at
-        rows = await tracker`SELECT * FROM jobs WHERE stage_index = 7 ORDER BY id`;
+        rows = await tracker`
+          SELECT * FROM jobs
+          WHERE stage_index = 7
+             OR jsonb_array_length(COALESCE(deliveries, '[]'::jsonb)) > 0
+          ORDER BY id
+        `;
       }
       const deliveredIds = rows.map(r => r.id);
       // History diff pass — one bulk read of the current mirror, then
@@ -1158,9 +1173,20 @@ app.get('/api/sync-diff', async (req, res) => {
     // fall back to no deleted filter. Older tracker schemas won't have it.
     let trackerRows;
     try {
-      trackerRows = await tracker`SELECT id FROM jobs WHERE stage_index = 7 AND deleted_at IS NULL ORDER BY id`;
+      trackerRows = await tracker`
+        SELECT id FROM jobs
+        WHERE (stage_index = 7
+               OR jsonb_array_length(COALESCE(deliveries, '[]'::jsonb)) > 0)
+          AND deleted_at IS NULL
+        ORDER BY id
+      `;
     } catch (_) {
-      trackerRows = await tracker`SELECT id FROM jobs WHERE stage_index = 7 ORDER BY id`;
+      trackerRows = await tracker`
+        SELECT id FROM jobs
+        WHERE stage_index = 7
+           OR jsonb_array_length(COALESCE(deliveries, '[]'::jsonb)) > 0
+        ORDER BY id
+      `;
     }
     const mirrorRows = await local`SELECT id FROM tracker_jobs ORDER BY id`;
     const trackerIds = trackerRows.map(r => r.id);
