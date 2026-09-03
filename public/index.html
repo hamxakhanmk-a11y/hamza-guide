@@ -1563,29 +1563,28 @@
     padding: 2px 6px; border-radius: 8px; vertical-align: middle;
     text-transform: uppercase;
   }
-  /* SHIPMENTS block at the bottom of each card (matches the tracker's
-     Client view). Amber cream background, one row per shipment, total
-     at the bottom. */
+  /* SHIPMENTS block — matches the tracker's Client-view swatch exactly:
+     #fff8ed cream background, #fed7aa border, #9a3412 title text. */
   .hg-job-shp {
-    margin-top: 10px; padding: 9px 12px;
-    background: #fef3c7; border-radius: 8px; font-size: 12px;
-    color: #0d0d0d;
+    margin-top: 10px; padding: 8px 10px;
+    background: #fff8ed; border: 1px solid #fed7aa;
+    border-radius: 8px; font-size: 12px; color: #0d0d0d;
   }
   .hg-job-shp-title {
-    font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
-    color: #92400e; margin-bottom: 6px; text-transform: uppercase;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+    color: #9a3412; margin-bottom: 4px; text-transform: uppercase;
   }
   .hg-job-shp-row {
     display: flex; justify-content: space-between; align-items: baseline;
-    padding: 3px 0; color: #0d0d0d;
+    padding: 2px 0; color: #0d0d0d;
   }
-  .hg-job-shp-row .date { color: #6b6960; font-size: 11px; }
-  .hg-job-shp-row .qty  { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .hg-job-shp-row .date { color: var(--text2); }
+  .hg-job-shp-row .qty  { font-variant-numeric: tabular-nums; font-weight: 600; }
   .hg-job-shp-total {
     display: flex; justify-content: space-between; align-items: baseline;
-    padding-top: 6px; margin-top: 4px;
-    border-top: 1px dashed #d97706;
-    font-weight: 800; color: #92400e;
+    padding-top: 4px; margin-top: 4px;
+    border-top: 1px solid #e5e7eb;
+    font-weight: 700; color: #0d0d0d;
   }
   .hg-job-shp-total .qty { font-variant-numeric: tabular-nums; }
   /* Shipments table (still used inside the deliveries modal). */
@@ -14230,6 +14229,8 @@ function hgOpenJobEdit(id) {
   }
   // Re-wire the Save Changes button. openEdit inserts onclick="saveEdit(id)"
   // which triggers the tracker's stock-adjustment logic — we bypass that.
+  // Also inject a Shipments block at the bottom of the modal so it
+  // matches the tracker's edit view.
   setTimeout(() => {
     const btns = document.querySelectorAll('.modal-actions button');
     for (const b of btns) {
@@ -14239,7 +14240,70 @@ function hgOpenJobEdit(id) {
         b.textContent = 'Save (local only)';
       }
     }
+    hgInjectShipmentsIntoModal(id);
   }, 30);
+}
+
+// Inject a read-only Shipments table into the currently-open edit
+// modal, right above the modal-actions bar. Reads deliveries[] from
+// the cache — no server call.
+function hgInjectShipmentsIntoModal(id) {
+  const actions = document.querySelector('.modal-actions');
+  if (!actions || document.getElementById('hg-modal-shipments')) return;
+  const j = (__hgJobsCache || []).find(x => x.id === id);
+  if (!j) return;
+  const list = Array.isArray(j.deliveries) ? j.deliveries : [];
+  const shipped = list.reduce((s, d) => s + (parseFloat(d.cartons) || 0), 0);
+  const booked  = parseFloat(String(j.qty || '').replace(/[^0-9.\-]/g, ''));
+  const bookedText = Number.isFinite(booked) && booked > 0 ? booked.toLocaleString('en-IN') : null;
+  const remaining = Number.isFinite(booked) && booked > 0 ? Math.max(0, booked - shipped) : null;
+  const wrap = document.createElement('div');
+  wrap.id = 'hg-modal-shipments';
+  wrap.style.cssText = 'margin-top:16px;padding:12px 14px;background:#fff8ed;border:1px solid #fed7aa;border-radius:10px;';
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:11px;color:#9a3412;text-transform:uppercase;letter-spacing:0.06em;font-weight:800;">
+        &#128666; Shipments (${list.length})
+      </div>
+      ${list.length === 0
+        ? '<span style="background:#e5e7eb;color:#374151;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">NOT YET DELIVERED</span>'
+        : (remaining === 0 || (Number.isFinite(booked) && shipped >= booked))
+          ? '<span style="background:#166534;color:#fff;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">FULLY DELIVERED</span>'
+          : '<span style="background:#f59e0b;color:#fff;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">PARTIAL</span>'}
+    </div>
+    <div style="font-size:12px;color:#0d0d0d;margin-bottom:8px;">
+      ${bookedText ? `Booked: <b>${bookedText}</b> unit cartons &middot; ` : ''}
+      Shipped: <b>${shipped.toLocaleString('en-IN')}</b> unit cartons
+      ${remaining !== null ? ` &middot; Remaining: <b>${remaining.toLocaleString('en-IN')}</b>` : ''}
+    </div>
+    ${list.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;">
+      <thead>
+        <tr style="background:#fef3e2;">
+          <th style="text-align:left;padding:6px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a3412;">Date</th>
+          <th style="text-align:right;padding:6px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a3412;">Unit Cartons</th>
+          <th style="text-align:left;padding:6px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a3412;">PO No.</th>
+          <th style="text-align:left;padding:6px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a3412;">Batch No.</th>
+          <th style="text-align:left;padding:6px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a3412;">Challan No.</th>
+          <th style="text-align:left;padding:6px 8px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#9a3412;">By</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(d => `
+          <tr style="border-top:1px solid #fed7aa;">
+            <td style="padding:6px 8px;white-space:nowrap;">${_hgEsc(d.date || '')}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;">${(parseFloat(d.cartons) || 0).toLocaleString('en-IN')}</td>
+            <td style="padding:6px 8px;">${_hgEsc(d.po_no || '')}</td>
+            <td style="padding:6px 8px;">${_hgEsc(d.batch_no || '')}</td>
+            <td style="padding:6px 8px;">${_hgEsc(d.challan_no || d.notes || '')}</td>
+            <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${_hgEsc(d.by || '')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>` : `
+    <div style="text-align:center;padding:12px;color:var(--text2);font-style:italic;font-size:12px;">No deliveries recorded yet.</div>`}
+  `;
+  actions.parentNode.insertBefore(wrap, actions);
 }
 
 // Save the form values to Hamza Guide's mirror. Never touches the
