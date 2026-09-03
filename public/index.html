@@ -14106,9 +14106,9 @@ function hgOpenShipments(id) {
   const remaining = Number.isFinite(booked) && booked > 0 ? Math.max(0, booked - shipped) : null;
   const statusPill = list.length === 0
     ? '<span style="background:#e5e7eb;color:#374151;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;">NOT YET DELIVERED</span>'
-    : (remaining === 0 || (Number.isFinite(booked) && shipped >= booked))
-      ? '<span style="background:#166534;color:#fff;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;">FULLY DELIVERED</span>'
-      : '<span style="background:#f59e0b;color:#fff;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;">PARTIAL</span>';
+    : (Number.isFinite(booked) && booked > 0 && shipped < booked)
+      ? '<span style="background:#f59e0b;color:#fff;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;">PARTIAL</span>'
+      : '<span style="background:#166534;color:#fff;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.5px;">FULLY DELIVERED</span>';
   const rowsHtml = list.length ? list.map(d => `
     <tr>
       <td>${_hgEsc(d.date || '')}</td>
@@ -14267,9 +14267,9 @@ function hgInjectShipmentsIntoModal(id) {
       </div>
       ${list.length === 0
         ? '<span style="background:#e5e7eb;color:#374151;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">NOT YET DELIVERED</span>'
-        : (remaining === 0 || (Number.isFinite(booked) && shipped >= booked))
-          ? '<span style="background:#166534;color:#fff;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">FULLY DELIVERED</span>'
-          : '<span style="background:#f59e0b;color:#fff;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">PARTIAL</span>'}
+        : (Number.isFinite(booked) && booked > 0 && shipped < booked)
+          ? '<span style="background:#f59e0b;color:#fff;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">PARTIAL</span>'
+          : '<span style="background:#166534;color:#fff;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:0.5px;">FULLY DELIVERED</span>'}
     </div>
     <div style="font-size:12px;color:#0d0d0d;margin-bottom:8px;">
       ${bookedText ? `Booked: <b>${bookedText}</b> unit cartons &middot; ` : ''}
