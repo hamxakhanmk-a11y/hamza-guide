@@ -1251,30 +1251,32 @@
   .hg-hero .mode-btn.active { background: #fff; color: var(--brand-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
   /* Flowing tab selector — the same liquid pill used in Supreme Art Tracker.
      One indicator travels beneath the buttons, then briefly changes shape so
-     switching sections feels smooth instead of each tab flashing on/off. */
+     switching sections feels smooth instead of each tab flashing on/off.
+     Blue shades deliberately distinguish this moving selection from the
+     app's normal maroon brand colour. */
   .hg-flow-tabs { position: relative; isolation: isolate; }
   .hg-flow-indicator {
     position: absolute; left: 0; top: 4px; bottom: 4px; z-index: 0;
     width: var(--hg-flow-w, 0px); transform: translateX(var(--hg-flow-x, 0px));
     border-radius: 999px; pointer-events: none;
-    background: linear-gradient(110deg, #7f1d1d, var(--brand), #b73737);
-    box-shadow: 0 4px 14px rgba(121,31,31,.34);
+    background: linear-gradient(110deg, #0b4f8a, #1683d8, #55cdf4);
+    box-shadow: 0 4px 14px rgba(13,104,183,.38);
     transition: transform 1.08s cubic-bezier(.16,1,.3,1), width .96s cubic-bezier(.16,1,.3,1);
   }
   .hg-flow-indicator::after {
     content: ''; position: absolute; inset: 2px -8px; z-index: -1;
-    border-radius: inherit; background: rgba(163,45,45,.22); filter: blur(8px); opacity: .72;
+    border-radius: inherit; background: rgba(39,160,231,.30); filter: blur(8px); opacity: .72;
   }
-  /* The hero uses a light pill against its maroon background. */
-  .hg-hero .hg-flow-indicator { background: linear-gradient(110deg, #fff, #fff8f2, #fff); box-shadow: 0 3px 11px rgba(0,0,0,.22); }
-  .hg-hero .hg-flow-indicator::after { background: rgba(255,255,255,.20); }
+  /* The same blue water-like pill stays visible over the maroon hero. */
+  .hg-hero .hg-flow-indicator { background: linear-gradient(110deg, #07558f, #149cde, #69d8f4); box-shadow: 0 3px 11px rgba(0,0,0,.28); }
+  .hg-hero .hg-flow-indicator::after { background: rgba(75,195,246,.30); }
   .hg-flow-tabs > .mode-btn, .hg-flow-tabs > .hg-subtab { position: relative; z-index: 1; }
   .hg-hero .hg-flow-tabs > .mode-btn.active,
   .hg-flow-tabs.hg-subtabs > .hg-subtab.active {
     background: transparent !important; border-color: transparent; box-shadow: none;
     transform: scale(1.06);
   }
-  .hg-hero .hg-flow-tabs > .mode-btn.active { color: var(--brand-dark); }
+  .hg-hero .hg-flow-tabs > .mode-btn.active { color: #fff; }
   .hg-flow-tabs.hg-subtabs > .hg-subtab.active { color: #fff; }
   .hg-flow-tabs.is-flowing > .hg-flow-indicator { animation: hg-liquid-tab-morph 1.12s cubic-bezier(.16,1,.3,1); }
   @keyframes hg-liquid-tab-morph {
