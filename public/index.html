@@ -1251,32 +1251,30 @@
   .hg-hero .mode-btn.active { background: #fff; color: var(--brand-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
   /* Flowing tab selector — the same liquid pill used in Supreme Art Tracker.
      One indicator travels beneath the buttons, then briefly changes shape so
-     switching sections feels smooth instead of each tab flashing on/off.
-     Blue shades deliberately distinguish this moving selection from the
-     app's normal maroon brand colour. */
+     switching sections feels smooth instead of each tab flashing on/off. */
   .hg-flow-tabs { position: relative; isolation: isolate; }
   .hg-flow-indicator {
     position: absolute; left: 0; top: 4px; bottom: 4px; z-index: 0;
     width: var(--hg-flow-w, 0px); transform: translateX(var(--hg-flow-x, 0px));
     border-radius: 999px; pointer-events: none;
-    background: linear-gradient(110deg, #0b4f8a, #1683d8, #55cdf4);
-    box-shadow: 0 4px 14px rgba(13,104,183,.38);
+    background: linear-gradient(110deg, #7f1d1d, var(--brand), #b73737);
+    box-shadow: 0 4px 14px rgba(121,31,31,.34);
     transition: transform 1.08s cubic-bezier(.16,1,.3,1), width .96s cubic-bezier(.16,1,.3,1);
   }
   .hg-flow-indicator::after {
     content: ''; position: absolute; inset: 2px -8px; z-index: -1;
-    border-radius: inherit; background: rgba(39,160,231,.30); filter: blur(8px); opacity: .72;
+    border-radius: inherit; background: rgba(163,45,45,.22); filter: blur(8px); opacity: .72;
   }
-  /* The same blue water-like pill stays visible over the maroon hero. */
-  .hg-hero .hg-flow-indicator { background: linear-gradient(110deg, #07558f, #149cde, #69d8f4); box-shadow: 0 3px 11px rgba(0,0,0,.28); }
-  .hg-hero .hg-flow-indicator::after { background: rgba(75,195,246,.30); }
+  /* The hero uses a light pill against its maroon background. */
+  .hg-hero .hg-flow-indicator { background: linear-gradient(110deg, #fff, #fff8f2, #fff); box-shadow: 0 3px 11px rgba(0,0,0,.22); }
+  .hg-hero .hg-flow-indicator::after { background: rgba(255,255,255,.20); }
   .hg-flow-tabs > .mode-btn, .hg-flow-tabs > .hg-subtab { position: relative; z-index: 1; }
   .hg-hero .hg-flow-tabs > .mode-btn.active,
   .hg-flow-tabs.hg-subtabs > .hg-subtab.active {
     background: transparent !important; border-color: transparent; box-shadow: none;
     transform: scale(1.06);
   }
-  .hg-hero .hg-flow-tabs > .mode-btn.active { color: #fff; }
+  .hg-hero .hg-flow-tabs > .mode-btn.active { color: var(--brand-dark); }
   .hg-flow-tabs.hg-subtabs > .hg-subtab.active { color: #fff; }
   .hg-flow-tabs.is-flowing > .hg-flow-indicator { animation: hg-liquid-tab-morph 1.12s cubic-bezier(.16,1,.3,1); }
   @keyframes hg-liquid-tab-morph {
@@ -1565,16 +1563,22 @@
     padding: 2px 6px; border-radius: 8px; vertical-align: middle;
     text-transform: uppercase;
   }
-  /* Stage / status pill on card head — green for delivered, amber
-     for in-progress-with-partial-shipments. */
+  /* Stage / status pill on card head — matches the tracker's own
+     badge palette (see index.html:5140-5200 in the tracker).
+       DELIVERED           = yellow  #facc15 / dark brown text
+       PARTIAL DELIVERY    = amber   #f59e0b / white text
+       READY TO DELIVER    = green   #16a34a / white text
+       (other stages)      = soft blue tag with brand-blue text */
   .hg-job-stage {
     display: inline-block; margin-left: 6px;
-    font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.04em;
     padding: 2px 7px; border-radius: 8px; vertical-align: middle;
     text-transform: uppercase; white-space: nowrap;
   }
-  .hg-job-stage.delivered   { background: #166534; color: #fff; }
-  .hg-job-stage.in-progress { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+  .hg-job-stage.delivered { background: #facc15; color: #422006; }
+  .hg-job-stage.partial   { background: #f59e0b; color: #fff; }
+  .hg-job-stage.ready     { background: #16a34a; color: #fff; }
+  .hg-job-stage.active    { background: #e0e7ff; color: #3730a3; }
   /* SHIPMENTS block — matches the tracker's Client-view swatch exactly:
      #fff8ed cream background, #fed7aa border, #9a3412 title text. */
   .hg-job-shp {
@@ -12897,15 +12901,37 @@ async function hgRenderJobsList() {
     // Shipments block source data
     const shipList = Array.isArray(j.deliveries) ? j.deliveries : [];
     const shipTotal = shipList.reduce((s, d) => s + (parseFloat(d.cartons) || 0), 0);
-    // Stage / status pill — DELIVERED (green) when stage=7, or
-    // IN: <stage name> (amber) when still in production but has
-    // started partial shipping. STAGES is defined at the top of the
-    // tracker JS we forked.
+    // Stage / status pill — mirrors the tracker's card-badge rules
+    // (see tracker index.html:isPartialDelivery + line 5190-5200).
+    //
+    //   PARTIAL DELIVERY — stage < 7 AND booked qty is known AND
+    //     0 < shipped < booked. Amber pill; shows "— N left" when
+    //     the booked count is set.
+    //   DELIVERED — stage_index === 7. Yellow pill; shows the
+    //     total shipped cartons alongside so the user sees the qty
+    //     at a glance without opening the shipments block.
+    //   READY TO DELIVER — stage_index === 6 (Storage / Ready).
+    //     Green pill.
+    //   otherwise — stage name in a soft-blue "active" pill.
     const stageIdx = Number(j.stage_index || 0);
     const stageName = (typeof STAGES !== 'undefined' && STAGES[stageIdx]) ? STAGES[stageIdx] : '';
-    const stagePill = stageIdx === 7
-      ? '<span class="hg-job-stage delivered" title="Fully delivered per the tracker">Delivered</span>'
-      : `<span class="hg-job-stage in-progress" title="Job still in production — partial shipments only">In: ${_hgEsc(stageName || 'Stage ' + stageIdx)}</span>`;
+    const bookedCartons  = parseFloat(String(j.qty    || '').replace(/[^0-9.\-]/g, '')) || 0;
+    const legacyDelqty   = parseFloat(String(j.delqty || '').replace(/[^0-9.\-]/g, '')) || 0;
+    const shippedCartons = stageIdx === 7
+      ? (legacyDelqty || shipTotal)
+      : (shipTotal    || legacyDelqty);
+    const isPartialDlv = stageIdx < 7 && bookedCartons > 0 && shippedCartons > 0 && shippedCartons < bookedCartons;
+    let stagePill;
+    if (isPartialDlv) {
+      const left = Math.max(0, bookedCartons - shippedCartons);
+      stagePill = `<span class="hg-job-stage partial" title="Partial delivery — ${shippedCartons.toLocaleString('en-IN')} of ${bookedCartons.toLocaleString('en-IN')} shipped">&#128230; Partial Delivery &mdash; ${left.toLocaleString('en-IN')} left</span>`;
+    } else if (stageIdx === 7) {
+      stagePill = `<span class="hg-job-stage delivered" title="Fully delivered per the tracker">&#128230; Delivered${shippedCartons ? ' &mdash; ' + shippedCartons.toLocaleString('en-IN') : ''}</span>`;
+    } else if (stageIdx === 6) {
+      stagePill = '<span class="hg-job-stage ready" title="Storage / Ready to Deliver">&#128230; Ready to Deliver</span>';
+    } else {
+      stagePill = `<span class="hg-job-stage active" title="Current production stage">${_hgEsc(stageName || 'Stage ' + stageIdx)}</span>`;
+    }
     return `
       <div class="hg-job-card ${isSel ? 'hg-selected' : ''}" data-hg-id="${j.id}" onclick="hgOpenJobEdit(${j.id})" title="Click to view / edit">
         <input type="checkbox" class="hg-job-select" data-hg-id="${j.id}" ${isSel ? 'checked' : ''}
