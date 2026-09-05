@@ -12714,7 +12714,7 @@ async function hgExportSales() {
   try { await ensureXlsx(); } catch (e) { alert(e.message || 'Failed to load Excel library.'); return; }
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
   const header = [
-    '#','Date','Company','Job Name','Code','Type',
+    '#','Date','Company','Job Name','Code','Type','Coatings',
     'Paper Type','Board Size','GSM',
     'Packets','Pack Unit','Raw Sheets','kg/pack','Total kg',
     'Rate (Rs/kg)','Board Cost (Rs)',
@@ -12723,7 +12723,7 @@ async function hgExportSales() {
   const aoa = [header];
   for (const r of rows) {
     aoa.push([
-      r.id, r.date, r.client, r.name, r.code, r.type ? cap(r.type) : '',
+      r.id, r.date, r.client, r.name, r.code, r.type ? cap(r.type) : '', r.coatings || '',
       r.paperType || '', r.size || '', r.gsm || '',
       r.packets || '', r.packUnit || '', r.sheets || '', r.kgPerPack || '', r.totalKg || '',
       r.boardRate || '', r.boardCost || '',
@@ -12731,7 +12731,7 @@ async function hgExportSales() {
     ]);
   }
   aoa.push([
-    '','','','','','TOTAL',
+    '','','','','','TOTAL','',
     '','','',
     totals.totalPackets || 0, '', totals.totalSheets || 0, '', totals.totalKg || 0,
     '', totals.totalBoardCost || 0,
@@ -14022,6 +14022,12 @@ async function hgRenderSales() {
     const totalKg   = kgPerPack * packets;
     const boardRate = Number(__hgBoardRatesCache && __hgBoardRatesCache.get(idStr)) || 0;
     const boardCost = totalKg * boardRate;
+    // Coatings applied on the job — stored as an array on the mirror
+    // row; joined for a readable column value. Empty when the job
+    // had no coatings.
+    const coatings = Array.isArray(j.coatings)
+      ? j.coatings.filter(Boolean).join(', ')
+      : String(j.coatings || '');
     return {
       id: j.id,
       guide_manual: !!j.guide_manual,
@@ -14030,6 +14036,7 @@ async function hgRenderSales() {
       code: j.jobcode || '',
       name: j.name || '',
       type: _hgJobType(j),
+      coatings,
       mrp, qty,
       revenue: mrp * qty,
       // Paper / packets / board-cost columns.
@@ -14095,6 +14102,7 @@ async function hgRenderSales() {
             <th>Job Name</th>
             <th>Code</th>
             <th>Type</th>
+            <th>Coatings</th>
             <th>Paper Type</th>
             <th>Board Size</th>
             <th class="num">GSM</th>
@@ -14123,6 +14131,7 @@ async function hgRenderSales() {
               <td>${_hgEsc(r.name)}</td>
               <td>${_hgEsc(r.code)}</td>
               <td>${r.type ? _hgEsc(cap(r.type)) : ''}</td>
+              <td>${r.coatings ? _hgEsc(r.coatings) : '<span style="color:var(--text2);">—</span>'}</td>
               <td>${_hgEsc(r.paperType) || '<span style="color:#b91c1c;">—</span>'}</td>
               <td>${_hgEsc(r.size)      || '<span style="color:#b91c1c;">—</span>'}</td>
               <td class="num">${r.gsm   || '<span style="color:#b91c1c;">—</span>'}</td>
@@ -14142,14 +14151,14 @@ async function hgRenderSales() {
               <td class="num money">${r.revenue ? fmtMoney(r.revenue) : '—'}</td>
             </tr>
           `).join('') : `
-            <tr><td colspan="19" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+            <tr><td colspan="20" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
               No jobs match the current filters.
             </td></tr>`}
         </tbody>
         ${jobRows.length ? `
         <tfoot>
           <tr>
-            <td colspan="10">TOTAL &mdash; ${jobRows.length} job${jobRows.length === 1 ? '' : 's'}
+            <td colspan="11">TOTAL &mdash; ${jobRows.length} job${jobRows.length === 1 ? '' : 's'}
               ${contribCount < jobRows.length ? `<span style="opacity:0.85;font-weight:500;font-size:11px;"> (${contribCount} contributing)</span>` : ''}
             </td>
             <td class="num">${totalPackets ? totalPackets.toLocaleString('en-IN') : ''}</td>
