@@ -1865,7 +1865,6 @@
       <button class="hg-subtab active" data-sub="all"   onclick="hgJobsSubTab('all')">&#128209; Jobs</button>
       <button class="hg-subtab"        data-sub="manual" onclick="hgJobsSubTab('manual')">&#10133; New Jobs</button>
       <button class="hg-subtab"        data-sub="sales" onclick="hgJobsSubTab('sales')">&#128176; Sales</button>
-      <button class="hg-subtab"        data-sub="board" onclick="hgJobsSubTab('board')">&#129521; Board Cost</button>
     </div>
     <div id="hg-jobs-content">
       <div class="hg-filters">
@@ -1923,11 +1922,11 @@
       </div>
       <div id="hg-manual-jobs-grid" class="hg-jobs-grid"></div>
     </div>
+    <!-- Sales pane holds THREE stacked tables that share one filter row:
+         Sales (revenue), Packets Consumed (material usage), Board Cost
+         (Rs cost derived from packets + paper size × GSM). Hamza reads
+         them together so he can eyeball margin on a period at a glance. -->
     <div id="hg-sales-pane" style="display:none;"></div>
-    <!-- Board Cost: derives kg-of-board consumed per job from paper size ×
-         GSM × packets, then multiplies by an EDITABLE Rs/kg rate saved
-         per-job. Uses the same filters shape as Sales for consistency. -->
-    <div id="hg-board-pane" style="display:none;"></div>
   </div>
   <!-- Inventory — card grid + sub-tabs for the tracker's Total In,
        Total Out, and Manual Consumption reports. -->
@@ -12621,7 +12620,10 @@ let __hgLastSalesFilterNote = '';
 let __hgBoardRatesCache = null;
 let __hgLastBoardRows        = null;
 let __hgLastBoardTotals      = null;
-let __hgLastBoardFilterNote  = '';
+// Packets Consumed snapshot for hgExportPackets — mirrors the pattern
+// used by Sales / Board Cost so the Excel export matches what's on
+// screen exactly. Populated by hgRenderSales on every render.
+let __hgLastPacketsRows      = null;
 
 // Toggle a single job's selection state; keeps card + row checkboxes
 // in sync so the same job can be checked / unchecked from either view.
@@ -13828,26 +13830,22 @@ function hgJobsSubTab(name) {
   const content = document.getElementById('hg-jobs-content');
   const sales   = document.getElementById('hg-sales-pane');
   const manual  = document.getElementById('hg-manual-jobs-pane');
-  const board   = document.getElementById('hg-board-pane');
   const isSales  = (name === 'sales');
   const isManual = (name === 'manual');
-  const isBoard  = (name === 'board');
-  const isAll    = !(isSales || isManual || isBoard);
+  const isAll    = !(isSales || isManual);
   if (content) content.style.display = isAll   ? '' : 'none';
   if (sales)   sales.style.display   = isSales ? '' : 'none';
   if (manual)  manual.style.display  = isManual ? '' : 'none';
-  if (board)   board.style.display   = isBoard  ? '' : 'none';
   // The sync control applies only to the Tracker archive/inventory, not to
   // private New Jobs, so hide it while that personal workspace is open.
   const syncActions = document.getElementById('hg-data-actions');
   if (syncActions) syncActions.style.display = isManual ? 'none' : 'block';
   const selectAll = document.getElementById('hg-jobs-selectall');
-  // "Select all" is meaningful for cards (All jobs) only — Sales / Board Cost
-  // manage their own row-level selection UI inside their tables.
+  // "Select all" is meaningful for cards (All jobs) only — Sales manages
+  // its own row-level selection UI inside its own table.
   if (selectAll) selectAll.style.display = isAll ? '' : 'none';
   if (isSales)  hgRenderSales();
   if (isManual) hgRenderManualJobs();
-  if (isBoard)  hgRenderBoardCost();
 }
 
 // Compute Sales = Σ (MRP × delivered qty) across archived jobs, with
@@ -13860,17 +13858,23 @@ async function hgRenderSales() {
   // Sales tab draws from BOTH data sources so the total is the true
   // number: tracker-synced jobs (delivered work that came in over the
   // wire) plus New Jobs (Guide-only cards Hamza has typed in for
-  // personal planning / off-tracker sales). Each source is cached
-  // independently so filtering stays snappy on re-render.
-  if (!__hgJobsCache || !__hgManualJobsCache) {
+  // personal planning / off-tracker sales). Board-cost rates load
+  // alongside so the Board Cost table below renders in one pass.
+  // Each source is cached independently so filtering stays snappy.
+  if (!__hgJobsCache || !__hgManualJobsCache || !__hgBoardRatesCache) {
     pane.innerHTML = '<div class="hg-data-empty">Loading&hellip;</div>';
     try {
-      const [trackerJobs, manualJobs] = await Promise.all([
+      const [trackerJobs, manualJobs, rates] = await Promise.all([
         __hgJobsCache        ? Promise.resolve(__hgJobsCache)        : fetch('/api/jobs').then(r => r.json()),
         __hgManualJobsCache  ? Promise.resolve(__hgManualJobsCache)  : api('GET', '/api/guide-jobs'),
+        __hgBoardRatesCache  ? Promise.resolve(null)                 : api('GET', '/api/board-costs'),
       ]);
       __hgJobsCache       = trackerJobs;
       __hgManualJobsCache = manualJobs;
+      if (rates) {
+        __hgBoardRatesCache = new Map();
+        for (const r of rates) __hgBoardRatesCache.set(String(r.job_id), Number(r.rate_per_kg) || 0);
+      }
     } catch (e) {
       pane.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
       return;
@@ -14083,8 +14087,187 @@ async function hgRenderSales() {
         </tfoot>` : ''}
       </table>
     </div>
+    ${_hgRenderPacketsTable(filtered)}
+    ${_hgRenderBoardTable(filtered)}
   `;
   hgUpdateSelBar();
+}
+
+// Packets Consumed — per-job material usage in packets / reams, with a
+// derived Raw Sheets column (packets × pack_size). Rendered inside the
+// Sales pane below the Sales table so a single filter drives all three.
+function _hgRenderPacketsTable(filteredJobs) {
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+  const fmtN = (n) => n ? n.toLocaleString('en-IN') : '';
+  const rows = filteredJobs.map(j => {
+    const { paperType, l, w, gsm } = _hgParsePaper(j.paper);
+    const packets = _hgPacketsConsumed(j);
+    const isRe    = _hgIsReamPaper(paperType);
+    const packSize = isRe ? 500 : 100;
+    return {
+      id: String(j.id),
+      guide_manual: !!j.guide_manual,
+      date: _hgJobDate(j),
+      client: (j.client || '').trim(),
+      name: j.name || '',
+      code: j.jobcode || '',
+      type: _hgJobType(j),
+      paperType,
+      size: (l && w) ? `${l}×${w}` : '',
+      gsm,
+      packets,
+      packUnit: isRe ? 'reams' : 'pkts',
+      packSize,
+      sheets: packets * packSize,
+    };
+  }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const totalPackets = rows.reduce((s, r) => s + r.packets, 0);
+  const totalSheets  = rows.reduce((s, r) => s + r.sheets,  0);
+  const withPackets  = rows.filter(r => r.packets > 0).length;
+  __hgLastPacketsRows = rows;
+  return `
+    <div class="hg-data-head" style="margin-top:26px;">
+      <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+        &#128230; Packets Consumed <span class="hg-count-pill">${rows.length}</span>
+      </div>
+      <button class="btn btn-sm" onclick="hgExportPackets()" style="background:#166534;color:#fff;border-color:#166534;">&#128202; Export</button>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin:4px 0 10px;">
+      Packets / reams issued to each job (from <code>particulars.quantity_of_packets</code>) &middot; Raw Sheets = packets × 100 for cards, × 500 for papers.
+    </div>
+    <div class="hg-sales-tablewrap">
+      <table class="hg-sales-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Date</th>
+            <th>Company</th>
+            <th>Job Name</th>
+            <th>Paper</th>
+            <th>Size</th>
+            <th class="num">GSM</th>
+            <th class="num">Packets / Reams</th>
+            <th class="num">Raw Sheets</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(r => `
+            <tr class="${r.packets === 0 ? 'muted' : ''}">
+              <td class="num">${_hgEsc(r.id)}${r.guide_manual ? ' <span title="Guide-only job (New Jobs)" style="display:inline-block;font-size:9px;font-weight:800;background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:6px;letter-spacing:0.04em;vertical-align:middle;">NEW</span>' : ''}</td>
+              <td>${_hgEsc(r.date)}</td>
+              <td>${_hgEsc(r.client)}</td>
+              <td>${_hgEsc(r.name)}</td>
+              <td>${_hgEsc(r.paperType) || '<span style="color:#b91c1c;">—</span>'}</td>
+              <td>${_hgEsc(r.size)     || '<span style="color:#b91c1c;">—</span>'}</td>
+              <td class="num">${r.gsm  || ''}</td>
+              <td class="num">${r.packets ? fmtN(r.packets) + ' <span style="color:var(--text2);font-size:10px;">' + r.packUnit + '</span>' : '<span style="color:#b91c1c;">—</span>'}</td>
+              <td class="num">${fmtN(r.sheets)}</td>
+            </tr>
+          `).join('') : `
+            <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+              No jobs match the current filters.
+            </td></tr>`}
+        </tbody>
+        ${rows.length ? `
+        <tfoot>
+          <tr>
+            <td colspan="7">TOTAL &mdash; ${rows.length} job${rows.length === 1 ? '' : 's'}
+              ${withPackets < rows.length ? `<span style="opacity:0.85;font-weight:500;font-size:11px;"> (${withPackets} with packets)</span>` : ''}
+            </td>
+            <td class="num">${fmtN(totalPackets)}</td>
+            <td class="num">${fmtN(totalSheets)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
+    </div>
+  `;
+}
+
+// Board Cost — Rs cost of the board / paper each job used. Rate per kg
+// is editable per row (persisted in hg_board_costs). Rendered inside
+// the Sales pane below the Packets Consumed table.
+function _hgRenderBoardTable(filteredJobs) {
+  const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
+  const fmtKg    = (n) => n ? n.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '';
+  const rows = _hgBuildBoardRows(filteredJobs);
+  const totalKgAll   = rows.reduce((s, r) => s + r.totalKg, 0);
+  const totalCostAll = rows.reduce((s, r) => s + r.cost,    0);
+  const contribCount = rows.filter(r => r.cost > 0).length;
+  const missingCount = rows.filter(r => !r.canCompute).length;
+  __hgLastBoardRows   = rows;
+  __hgLastBoardTotals = { totalKg: totalKgAll, totalCost: totalCostAll };
+  return `
+    <div class="hg-data-head" style="margin-top:26px;">
+      <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+        &#129521; Board Cost <span class="hg-count-pill">${rows.length}</span>
+      </div>
+      <button class="btn btn-sm" onclick="hgExportBoard()" style="background:#166534;color:#fff;border-color:#166534;">&#128202; Export</button>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin:4px 0 10px;line-height:1.5;">
+      <b>Formula.</b> Cards / boards: <code>(L × W × GSM) / 15500</code> = kg per packet (100 sheets).
+      Papers (Art / Off-White / Offset): <code>(L × W × GSM) / 3100</code> = kg per ream (500 sheets).
+      Multiplied by packets consumed × your Rs/kg rate (rate is editable per row).
+      ${missingCount ? `<br>&#9888; ${missingCount} of ${rows.length} row${rows.length === 1 ? '' : 's'} cannot compute — the job is missing paper size, GSM, or packets consumed.` : ''}
+    </div>
+    <div class="hg-sales-tablewrap">
+      <table class="hg-sales-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Date</th>
+            <th>Company</th>
+            <th>Job Name</th>
+            <th>Paper</th>
+            <th>Size</th>
+            <th class="num">GSM</th>
+            <th class="num">Packets</th>
+            <th class="num" title="kg per packet / ream — from paper size × GSM">kg/pack</th>
+            <th class="num">Total kg</th>
+            <th class="num" style="min-width:110px;">Rate (Rs / kg)</th>
+            <th class="num">Board Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(r => `
+            <tr class="${r.cost === 0 ? 'muted' : ''}">
+              <td class="num">${_hgEsc(r.id)}${r.guide_manual ? ' <span title="Guide-only job (New Jobs)" style="display:inline-block;font-size:9px;font-weight:800;background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:6px;letter-spacing:0.04em;vertical-align:middle;">NEW</span>' : ''}</td>
+              <td>${_hgEsc(r.date)}</td>
+              <td>${_hgEsc(r.client)}</td>
+              <td>${_hgEsc(r.name)}</td>
+              <td>${_hgEsc(r.paperType) || '<span style="color:#b91c1c;">—</span>'}</td>
+              <td>${_hgEsc(r.size)     || '<span style="color:#b91c1c;">—</span>'}</td>
+              <td class="num">${r.gsm     || '<span style="color:#b91c1c;">—</span>'}</td>
+              <td class="num">${r.packets ? r.packets.toLocaleString('en-IN') + ' <span style="color:var(--text2);font-size:10px;">' + r.packUnit + '</span>' : '<span style="color:#b91c1c;">—</span>'}</td>
+              <td class="num">${r.kgPerPack ? r.kgPerPack.toLocaleString('en-IN', { maximumFractionDigits: 4 }) : ''}</td>
+              <td class="num">${fmtKg(r.totalKg)}</td>
+              <td class="num">
+                <input type="number" step="0.01" min="0" value="${r.rate || ''}"
+                       placeholder="0"
+                       data-hg-board-id="${_hgEsc(r.id)}"
+                       onchange="hgSaveBoardRate('${_hgEsc(r.id)}', this.value)"
+                       style="width:88px;text-align:right;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text);">
+              </td>
+              <td class="num money">${r.cost ? fmtMoney(r.cost) : '—'}</td>
+            </tr>
+          `).join('') : `
+            <tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+              No jobs match the current filters.
+            </td></tr>`}
+        </tbody>
+        ${rows.length ? `
+        <tfoot>
+          <tr>
+            <td colspan="9">TOTAL &mdash; ${rows.length} job${rows.length === 1 ? '' : 's'}
+              ${contribCount < rows.length ? `<span style="opacity:0.85;font-weight:500;font-size:11px;"> (${contribCount} priced)</span>` : ''}
+            </td>
+            <td class="num">${fmtKg(totalKgAll)}</td>
+            <td></td>
+            <td class="num money">${fmtMoney(totalCostAll)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
+    </div>
+  `;
 }
 // Header "select-all-visible" checkbox in the Sales table. Skips
 // New Jobs (guide_manual) — their ids are strings and they aren't
@@ -14163,104 +14346,17 @@ function _hgIsReamPaper(paperType) {
   return false;
 }
 
-async function hgRenderBoardCost() {
-  const pane = document.getElementById('hg-board-pane');
-  if (!pane) return;
-  if (!__hgJobsCache || !__hgManualJobsCache || !__hgBoardRatesCache) {
-    pane.innerHTML = '<div class="hg-data-empty">Loading&hellip;</div>';
-    try {
-      const [trackerJobs, manualJobs, rates] = await Promise.all([
-        __hgJobsCache        ? Promise.resolve(__hgJobsCache)        : fetch('/api/jobs').then(r => r.json()),
-        __hgManualJobsCache  ? Promise.resolve(__hgManualJobsCache)  : api('GET', '/api/guide-jobs'),
-        __hgBoardRatesCache  ? Promise.resolve(null)                 : api('GET', '/api/board-costs'),
-      ]);
-      __hgJobsCache       = trackerJobs;
-      __hgManualJobsCache = manualJobs;
-      if (rates) {
-        __hgBoardRatesCache = new Map();
-        for (const r of rates) __hgBoardRatesCache.set(String(r.job_id), Number(r.rate_per_kg) || 0);
-      }
-    } catch (e) {
-      pane.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
-      return;
-    }
-  }
-  // Merged list (tracker + New Jobs) with prefixed ids — same shape as
-  // Sales so filters read the same jobs and totals stay consistent.
-  const jobs = [
-    ...__hgJobsCache,
-    ...(__hgManualJobsCache || []).map(j => ({ ...j, id: 'G-' + j.id, guide_manual: true })),
-  ];
-  const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
-  const fmtKg    = (n) => n ? n.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '';
-  const cap      = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-  // Preserve filter selections across re-renders (whole pane re-templates
-  // on every keystroke / rate save). First-render default = today.
-  const prevCompany = (document.getElementById('hg-board-company') || {}).value || '';
-  const prevType    = (document.getElementById('hg-board-type')    || {}).value || '';
-  const _periodEl   = document.getElementById('hg-board-period');
-  const prevPeriod  = _periodEl ? _periodEl.value : 'today';
-  const prevFrom    = (document.getElementById('hg-board-from')    || {}).value || '';
-  const prevTo      = (document.getElementById('hg-board-to')      || {}).value || '';
-  const companyList = [...new Set(jobs.map(j => (j.client || '').trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  const compSelHtml = `
-    <select id="hg-board-company" class="hg-select" onchange="hgRenderBoardCost()">
-      <option value="">All companies</option>
-      ${companyList.map(c => `<option value="${_hgEsc(c)}"${c === prevCompany ? ' selected' : ''}>${_hgEsc(c)}</option>`).join('')}
-    </select>`;
-  const typeSelHtml = `
-    <select id="hg-board-type" class="hg-select" onchange="hgRenderBoardCost()">
-      <option value="">All types</option>
-      ${['syrup','tablet','capsule','leaflet','label'].map(t =>
-        `<option value="${t}"${t === prevType ? ' selected' : ''}>${cap(t)}</option>`
-      ).join('')}
-    </select>`;
-  const periodOpts = [
-    ['',           'All time'],
-    ['today',      'Today'],
-    ['week',       'This week'],
-    ['month',      'This month'],
-    ['last-month', 'Last month'],
-    ['year',       'This year'],
-    ['last-year',  'Last year'],
-    ['custom',     'Custom range…'],
-  ];
-  const periodSelHtml = `
-    <select id="hg-board-period" class="hg-select" onchange="hgRenderBoardCost()">
-      ${periodOpts.map(([v, l]) => `<option value="${v}"${v === prevPeriod ? ' selected' : ''}>${l}</option>`).join('')}
-    </select>`;
-  const customHtml = prevPeriod === 'custom' ? `
-    <span style="display:inline-flex;gap:6px;align-items:center;">
-      <input type="date" id="hg-board-from" class="hg-select" value="${_hgEsc(prevFrom)}" onchange="hgRenderBoardCost()" style="min-width:0;">
-      <span style="color:var(--text2);font-size:12px;">to</span>
-      <input type="date" id="hg-board-to"   class="hg-select" value="${_hgEsc(prevTo)}"   onchange="hgRenderBoardCost()" style="min-width:0;">
-    </span>` : '';
-  const compFilter = prevCompany.trim().toLowerCase();
-  const typeFilter = prevType.trim().toLowerCase();
-  const { from: dateFrom, to: dateTo } = _hgPeriodRange(prevPeriod, prevFrom, prevTo);
-  const filtered = jobs.filter(j => {
-    if (compFilter && (j.client || '').trim().toLowerCase() !== compFilter) return false;
-    if (typeFilter && _hgJobType(j) !== typeFilter) return false;
-    if (dateFrom || dateTo) {
-      const dt = _hgJobDate(j);
-      if (!dt) return false;
-      if (dateFrom && dt <  dateFrom) return false;
-      if (dateTo   && dt >= dateTo)   return false;
-    }
-    return true;
-  });
-  // Build one row per job — always include the row (even if some inputs
-  // are missing) so Hamza can see WHICH job is missing what.
-  const rows = filtered.map(j => {
+// Build one board-cost row per filtered job. hgRenderSales calls this
+// on every render so the Board Cost table below the Sales table sees
+// exactly the same filter + date-range dataset the Sales table used.
+function _hgBuildBoardRows(filteredJobs) {
+  return filteredJobs.map(j => {
     const idStr = String(j.id);
     const { paperType, l, w, gsm } = _hgParsePaper(j.paper);
     const packets = _hgPacketsConsumed(j);
     const isRe = _hgIsReamPaper(paperType);
     const divisor = isRe ? 3100 : 15500;
-    const kgPerPack = (l && w && gsm)
-      ? (l * w * gsm) / divisor
-      : 0;
+    const kgPerPack = (l && w && gsm) ? (l * w * gsm) / divisor : 0;
     const totalKg = kgPerPack * packets;
     const rate = Number(__hgBoardRatesCache && __hgBoardRatesCache.get(idStr)) || 0;
     const cost = totalKg * rate;
@@ -14286,100 +14382,6 @@ async function hgRenderBoardCost() {
       canCompute: !!(l && w && gsm && packets),
     };
   }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  const totalKgAll   = rows.reduce((s, r) => s + r.totalKg, 0);
-  const totalCostAll = rows.reduce((s, r) => s + r.cost, 0);
-  const contribCount = rows.filter(r => r.cost > 0).length;
-  const missingCount = rows.filter(r => !r.canCompute).length;
-  const periodLabelMap = Object.fromEntries(periodOpts);
-  const periodNote = prevPeriod ? (prevPeriod === 'custom'
-      ? (prevFrom || prevTo ? `${prevFrom || '…'} to ${prevTo || '…'}` : 'Custom range')
-      : periodLabelMap[prevPeriod])
-    : '';
-  const filterNote = [
-    compFilter ? `Company: ${_hgEsc(prevCompany)}` : '',
-    typeFilter ? `Type: ${_hgEsc(cap(prevType))}` : '',
-    periodNote ? `Period: ${_hgEsc(periodNote)}` : '',
-  ].filter(Boolean).join(' &middot; ');
-  __hgLastBoardRows       = rows;
-  __hgLastBoardTotals     = { totalKg: totalKgAll, totalCost: totalCostAll };
-  __hgLastBoardFilterNote = filterNote;
-
-  pane.innerHTML = `
-    <div class="hg-filters" style="margin-bottom:14px;">
-      ${compSelHtml}
-      ${typeSelHtml}
-      ${periodSelHtml}
-      ${customHtml}
-      ${(compFilter || typeFilter || prevPeriod) ? `
-        <button class="btn btn-sm" onclick="hgClearBoardFilters()">Clear filters</button>` : ''}
-      <button class="btn btn-sm" onclick="hgExportBoard()" style="margin-left:auto;background:#166534;color:#fff;border-color:#166534;">&#128202; Export to Excel</button>
-    </div>
-    ${filterNote ? `<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">${filterNote}</div>` : ''}
-    <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5;">
-      &#129521; <b>Formula.</b> Cards / boards: <code>(L × W × GSM) / 15500</code> = kg per packet (100 sheets).
-      Papers (Art / Off-White / Offset): <code>(L × W × GSM) / 3100</code> = kg per ream (500 sheets).
-      Multiplied by packets consumed × your Rs/kg rate.
-      ${missingCount ? `<br>&#9888; ${missingCount} of ${rows.length} row${rows.length === 1 ? '' : 's'} cannot compute — the job is missing paper size, GSM, or packets consumed.` : ''}
-    </div>
-    <div class="hg-sales-tablewrap">
-      <table class="hg-sales-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Date</th>
-            <th>Company</th>
-            <th>Job Name</th>
-            <th>Paper</th>
-            <th>Size</th>
-            <th class="num">GSM</th>
-            <th class="num">Packets</th>
-            <th class="num" title="kg per packet / ream — from paper size × GSM">kg/pack</th>
-            <th class="num">Total kg</th>
-            <th class="num" style="min-width:110px;">Rate (Rs / kg)</th>
-            <th class="num">Board Cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.length ? rows.map(r => `
-            <tr class="${r.cost === 0 ? 'muted' : ''}">
-              <td class="num">${_hgEsc(r.id)}${r.guide_manual ? ' <span title="Guide-only job (New Jobs)" style="display:inline-block;font-size:9px;font-weight:800;background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:6px;letter-spacing:0.04em;vertical-align:middle;">NEW</span>' : ''}</td>
-              <td>${_hgEsc(r.date)}</td>
-              <td>${_hgEsc(r.client)}</td>
-              <td>${_hgEsc(r.name)}</td>
-              <td>${_hgEsc(r.paperType) || '<span style="color:#b91c1c;">—</span>'}</td>
-              <td>${_hgEsc(r.size)     || '<span style="color:#b91c1c;">—</span>'}</td>
-              <td class="num">${r.gsm     || '<span style="color:#b91c1c;">—</span>'}</td>
-              <td class="num">${r.packets ? r.packets.toLocaleString('en-IN') + ' <span style="color:var(--text2);font-size:10px;">' + r.packUnit + '</span>' : '<span style="color:#b91c1c;">—</span>'}</td>
-              <td class="num">${r.kgPerPack ? r.kgPerPack.toLocaleString('en-IN', { maximumFractionDigits: 4 }) : ''}</td>
-              <td class="num">${fmtKg(r.totalKg)}</td>
-              <td class="num">
-                <input type="number" step="0.01" min="0" value="${r.rate || ''}"
-                       placeholder="0"
-                       data-hg-board-id="${_hgEsc(r.id)}"
-                       onchange="hgSaveBoardRate('${_hgEsc(r.id)}', this.value)"
-                       style="width:88px;text-align:right;padding:4px 6px;font-size:12px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text);">
-              </td>
-              <td class="num money">${r.cost ? fmtMoney(r.cost) : '—'}</td>
-            </tr>
-          `).join('') : `
-            <tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
-              No jobs match the current filters.
-            </td></tr>`}
-        </tbody>
-        ${rows.length ? `
-        <tfoot>
-          <tr>
-            <td colspan="9">TOTAL &mdash; ${rows.length} job${rows.length === 1 ? '' : 's'}
-              ${contribCount < rows.length ? `<span style="opacity:0.85;font-weight:500;font-size:11px;"> (${contribCount} priced)</span>` : ''}
-            </td>
-            <td class="num">${fmtKg(totalKgAll)}</td>
-            <td></td>
-            <td class="num money">${fmtMoney(totalCostAll)}</td>
-          </tr>
-        </tfoot>` : ''}
-      </table>
-    </div>
-  `;
 }
 
 // Save one row's Rs/kg rate. Optimistically writes into the in-memory
@@ -14391,7 +14393,9 @@ async function hgSaveBoardRate(jobId, value) {
   const prev = __hgBoardRatesCache && __hgBoardRatesCache.has(id) ? __hgBoardRatesCache.get(id) : null;
   if (!__hgBoardRatesCache) __hgBoardRatesCache = new Map();
   __hgBoardRatesCache.set(id, rate);
-  hgRenderBoardCost();
+  // Re-render the whole Sales pane so both the Board Cost table AND
+  // the totals row pick up the new number instantly.
+  hgRenderSales();
   try {
     await api('PUT', '/api/board-costs/' + encodeURIComponent(id), { rate_per_kg: rate });
   } catch (e) {
@@ -14399,20 +14403,15 @@ async function hgSaveBoardRate(jobId, value) {
     // reverted value so the user sees the change didn't stick.
     if (prev == null) __hgBoardRatesCache.delete(id);
     else              __hgBoardRatesCache.set(id, prev);
-    hgRenderBoardCost();
+    hgRenderSales();
     if (typeof notify === 'function') notify('Could not save rate: ' + (e.message || e));
   }
 }
 
-function hgClearBoardFilters() {
-  const c = document.getElementById('hg-board-company'); if (c) c.value = '';
-  const t = document.getElementById('hg-board-type');    if (t) t.value = '';
-  const p = document.getElementById('hg-board-period');  if (p) p.value = '';
-  hgRenderBoardCost();
-}
-
+// Excel export of the Board Cost table (uses the last rendered rows so
+// the export matches what the user is looking at).
 async function hgExportBoard() {
-  if (!__hgLastBoardRows) await hgRenderBoardCost();
+  if (!__hgLastBoardRows) await hgRenderSales();
   const rows   = __hgLastBoardRows   || [];
   const totals = __hgLastBoardTotals || { totalKg: 0, totalCost: 0 };
   if (!rows.length) { if (typeof notify === 'function') notify('Nothing to export.'); return; }
@@ -14435,8 +14434,40 @@ async function hgExportBoard() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Board Cost');
   const stamp = localDateISO();
-  const tag = __hgLastBoardFilterNote ? '-filtered' : '';
+  const tag = (__hgLastSalesFilterNote || '') ? '-filtered' : '';
   XLSX.writeFile(wb, `hamza-guide-board-cost${tag}-${stamp}.xlsx`);
+  if (typeof notify === 'function') notify('Exported!');
+}
+
+// Excel export of the Packets Consumed table (uses the last rendered
+// rows so the export matches what the user is looking at).
+async function hgExportPackets() {
+  if (!__hgLastPacketsRows) await hgRenderSales();
+  const rows = __hgLastPacketsRows || [];
+  if (!rows.length) { if (typeof notify === 'function') notify('Nothing to export.'); return; }
+  try { await ensureXlsx(); } catch (e) { alert(e.message || 'Failed to load Excel library.'); return; }
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+  const header = ['#','Date','Company','Job Name','Code','Type','Paper','Size','GSM','Packets Consumed','Pack Unit','Pack Size','Raw Sheets'];
+  const aoa = [header];
+  let totalPackets = 0, totalSheets = 0;
+  for (const r of rows) {
+    totalPackets += r.packets || 0;
+    totalSheets  += r.sheets  || 0;
+    aoa.push([
+      r.id, r.date, r.client, r.name, r.code, r.type ? cap(r.type) : '',
+      r.paperType, r.size, r.gsm || '', r.packets || '', r.packUnit, r.packSize, r.sheets || '',
+    ]);
+  }
+  aoa.push(['','','','','','','','','TOTAL', totalPackets, '', '', totalSheets]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = header.map((h, i) => ({
+    wch: Math.max(String(h).length, ...aoa.slice(1).map(r => String(r[i] ?? '').length)) + 2
+  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Packets Consumed');
+  const stamp = localDateISO();
+  const tag = (__hgLastSalesFilterNote || '') ? '-filtered' : '';
+  XLSX.writeFile(wb, `hamza-guide-packets-consumed${tag}-${stamp}.xlsx`);
   if (typeof notify === 'function') notify('Exported!');
 }
 // Latest visible-jobs-card set — hgToggleAllVisibleJobs reads it so
@@ -14903,17 +14934,16 @@ async function hgSyncTracker() {
     // re-render whichever data tab is currently open.
     __hgJobsCache = null;
     __hgInvCache  = null;
-    // Sales / Board Cost lean on __hgJobsCache; re-render whichever
-    // sub-tab is on-screen so the fresh sync is visible immediately.
-    // (Board Cost KEEPS its rates cache — rates don't change on sync.)
+    // Sales (which now renders Sales + Packets + Board Cost together)
+    // and All-Jobs both lean on __hgJobsCache — re-render whichever is
+    // on-screen so the fresh sync is visible immediately. Board-rate
+    // cache is deliberately kept: rates don't come from tracker.
     const jobsPaneOpen  = document.getElementById('hg-jobs-list-pane')?.style.display === 'block';
     const invPaneOpen   = document.getElementById('hg-inventory-pane')?.style.display === 'block';
     const salesOpen     = document.getElementById('hg-sales-pane')?.style.display   === '';
-    const boardOpen     = document.getElementById('hg-board-pane')?.style.display   === '';
     if (jobsPaneOpen) {
-      if      (salesOpen) hgRenderSales();
-      else if (boardOpen) hgRenderBoardCost();
-      else                hgRenderJobsList();
+      if (salesOpen) hgRenderSales();
+      else           hgRenderJobsList();
     }
     if (invPaneOpen)  hgRenderInventoryList();
   } catch (e) {
