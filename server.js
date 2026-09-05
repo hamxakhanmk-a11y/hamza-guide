@@ -453,6 +453,19 @@ async function initDb() {
     `;
     await sql`CREATE INDEX IF NOT EXISTS press_calibration_profile_idx ON press_calibration_readings(press_profile_id, id DESC)`;
 
+    // Board cost — per-job editable board/paper rate (Rs / kg). Keyed by
+    // tracker job id (or the string form "G-<n>" for a Guide-only manual
+    // job). Weight is derived on the client from paper size × GSM ×
+    // packets_consumed; only the RATE lives here so different runs of the
+    // same board type can carry different vendor prices.
+    await sql`
+      CREATE TABLE IF NOT EXISTS hg_board_costs (
+        job_id      TEXT PRIMARY KEY,
+        rate_per_kg NUMERIC NOT NULL DEFAULT 0,
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
     console.log('Database ready');
   } catch (err) {
     console.error('Database init error:', err.message);
@@ -935,6 +948,51 @@ app.delete('/api/guide-jobs/:id', requireWriteUser, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Guide job not found' });
     await logAudit(sql, req, { action: 'guide_job.delete', entityType: 'guide_job', entityId: id, summary: `Deleted Guide job: ${rows[0].data.name || 'Untitled'}` });
     res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Board cost — per-job editable Rs/kg for the board formula ──
+// The weight itself (kg per packet, total kg) is derived on the
+// client from paper size × GSM × packets consumed — different jobs
+// use different vendors / different lot prices, so the RATE is what
+// varies and what we persist here. Rows are keyed by TEXT job id so
+// the same table works for tracker mirror ids ("297") and Guide-only
+// manual job ids ("G-3").
+app.get('/api/board-costs', requireAuth, async (req, res) => {
+  try {
+    await dbReady;
+    const sql = getDb();
+    const rows = await sql`SELECT job_id, rate_per_kg, updated_at FROM hg_board_costs`;
+    res.json(rows.map(r => ({ job_id: r.job_id, rate_per_kg: Number(r.rate_per_kg) || 0, updated_at: r.updated_at })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/board-costs/:job_id', requireWriteUser, async (req, res) => {
+  try {
+    await dbReady;
+    const jobId = String(req.params.job_id || '').trim();
+    if (!jobId) return res.status(400).json({ error: 'Missing job id' });
+    const rate = Number(req.body && req.body.rate_per_kg);
+    if (!Number.isFinite(rate) || rate < 0) return res.status(400).json({ error: 'rate_per_kg must be a non-negative number' });
+    const sql = getDb();
+    // rate === 0 is a legal "clear the price" — we still store the row so
+    // the client shows a definitive zero rather than an unfilled input.
+    const rows = await sql`
+      INSERT INTO hg_board_costs (job_id, rate_per_kg, updated_at)
+      VALUES (${jobId}, ${rate}, NOW())
+      ON CONFLICT (job_id) DO UPDATE
+        SET rate_per_kg = EXCLUDED.rate_per_kg,
+            updated_at  = NOW()
+      RETURNING job_id, rate_per_kg, updated_at
+    `;
+    const row = rows[0];
+    res.json({ job_id: row.job_id, rate_per_kg: Number(row.rate_per_kg) || 0, updated_at: row.updated_at });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
