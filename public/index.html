@@ -13858,19 +13858,23 @@ async function hgRenderSales() {
   // Sales tab draws from BOTH data sources so the total is the true
   // number: tracker-synced jobs (delivered work that came in over the
   // wire) plus New Jobs (Guide-only cards Hamza has typed in for
-  // personal planning / off-tracker sales). Board-cost rates load
-  // alongside so the Board Cost table below renders in one pass.
-  // Each source is cached independently so filtering stays snappy.
-  if (!__hgJobsCache || !__hgManualJobsCache || !__hgBoardRatesCache) {
+  // personal planning / off-tracker sales). Board-cost rates AND the
+  // inventory mirror also load here so the Packets / Board Cost tables
+  // below can resolve j.paper from the linked inventory item when the
+  // job itself doesn't carry a paper label. All four sources cache
+  // independently so filter re-renders stay snappy.
+  if (!__hgJobsCache || !__hgManualJobsCache || !__hgBoardRatesCache || !__hgInvCache) {
     pane.innerHTML = '<div class="hg-data-empty">Loading&hellip;</div>';
     try {
-      const [trackerJobs, manualJobs, rates] = await Promise.all([
+      const [trackerJobs, manualJobs, rates, inv] = await Promise.all([
         __hgJobsCache        ? Promise.resolve(__hgJobsCache)        : fetch('/api/jobs').then(r => r.json()),
         __hgManualJobsCache  ? Promise.resolve(__hgManualJobsCache)  : api('GET', '/api/guide-jobs'),
         __hgBoardRatesCache  ? Promise.resolve(null)                 : api('GET', '/api/board-costs'),
+        __hgInvCache         ? Promise.resolve(__hgInvCache)         : fetch('/api/inventory').then(r => r.json()),
       ]);
       __hgJobsCache       = trackerJobs;
       __hgManualJobsCache = manualJobs;
+      __hgInvCache        = inv;
       if (rates) {
         __hgBoardRatesCache = new Map();
         for (const r of rates) __hgBoardRatesCache.set(String(r.job_id), Number(r.rate_per_kg) || 0);
@@ -14089,6 +14093,8 @@ async function hgRenderSales() {
     </div>
     ${_hgRenderPacketsTable(filtered)}
     ${_hgRenderBoardTable(filtered)}
+    ${_hgRenderPaperTypeTable(filtered)}
+    ${_hgRenderBoardSizeTable(filtered)}
   `;
   hgUpdateSelBar();
 }
@@ -14100,7 +14106,7 @@ function _hgRenderPacketsTable(filteredJobs) {
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
   const fmtN = (n) => n ? n.toLocaleString('en-IN') : '';
   const rows = filteredJobs.map(j => {
-    const { paperType, l, w, gsm } = _hgParsePaper(j.paper);
+    const { paperType, l, w, gsm } = _hgParsePaper(j);
     const packets = _hgPacketsConsumed(j);
     const isRe    = _hgIsReamPaper(paperType);
     const packSize = isRe ? 500 : 100;
@@ -14280,6 +14286,187 @@ function hgToggleAllVisibleSales(checked) {
   hgRenderSales();
 }
 
+// Paper Types breakdown — one row per paper type used in the filtered
+// jobs. Aggregates job count, total packets/reams, total raw sheets,
+// total kg, and total board cost. Sorted by board cost desc so the
+// most expensive paper family surfaces at the top.
+function _hgRenderPaperTypeTable(filteredJobs) {
+  const fmtN     = (n) => n ? n.toLocaleString('en-IN') : '';
+  const fmtKg    = (n) => n ? n.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '';
+  const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
+  const groups = new Map();
+  for (const j of filteredJobs) {
+    const idStr = String(j.id);
+    const { paperType, l, w, gsm } = _hgParsePaper(j);
+    const key   = (paperType || '(unknown)').toLowerCase();
+    const label = paperType || '(unknown)';
+    const packets = _hgPacketsConsumed(j);
+    const isRe    = _hgIsReamPaper(paperType);
+    const packSize = isRe ? 500 : 100;
+    const divisor  = isRe ? 3100 : 15500;
+    const kgPerPack = (l && w && gsm) ? (l * w * gsm) / divisor : 0;
+    const totalKg   = kgPerPack * packets;
+    const rate      = Number(__hgBoardRatesCache && __hgBoardRatesCache.get(idStr)) || 0;
+    const cost      = totalKg * rate;
+    if (!groups.has(key)) {
+      groups.set(key, { label, unit: isRe ? 'reams' : 'pkts', jobs: 0, packets: 0, sheets: 0, kg: 0, cost: 0 });
+    }
+    const g = groups.get(key);
+    g.jobs    += 1;
+    g.packets += packets;
+    g.sheets  += packets * packSize;
+    g.kg      += totalKg;
+    g.cost    += cost;
+  }
+  const rows = [...groups.values()].sort((a, b) => b.cost - a.cost || b.packets - a.packets);
+  const totalJobs    = rows.reduce((s, r) => s + r.jobs, 0);
+  const totalPackets = rows.reduce((s, r) => s + r.packets, 0);
+  const totalSheets  = rows.reduce((s, r) => s + r.sheets, 0);
+  const totalKg      = rows.reduce((s, r) => s + r.kg, 0);
+  const totalCost    = rows.reduce((s, r) => s + r.cost, 0);
+  return `
+    <div class="hg-data-head" style="margin-top:26px;">
+      <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+        &#128196; By Paper Type <span class="hg-count-pill">${rows.length}</span>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin:4px 0 10px;">
+      Same filtered set as the tables above, grouped by paper type.
+    </div>
+    <div class="hg-sales-tablewrap">
+      <table class="hg-sales-table">
+        <thead>
+          <tr>
+            <th>Paper Type</th>
+            <th class="num">Jobs</th>
+            <th class="num">Packets / Reams</th>
+            <th class="num">Raw Sheets</th>
+            <th class="num">Total kg</th>
+            <th class="num">Board Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(r => `
+            <tr class="${r.cost === 0 ? 'muted' : ''}">
+              <td>${_hgEsc(r.label.charAt(0).toUpperCase() + r.label.slice(1))}</td>
+              <td class="num">${fmtN(r.jobs)}</td>
+              <td class="num">${r.packets ? fmtN(r.packets) + ' <span style="color:var(--text2);font-size:10px;">' + r.unit + '</span>' : '—'}</td>
+              <td class="num">${fmtN(r.sheets)}</td>
+              <td class="num">${fmtKg(r.kg)}</td>
+              <td class="num money">${r.cost ? fmtMoney(r.cost) : '—'}</td>
+            </tr>
+          `).join('') : `
+            <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+              No jobs match the current filters.
+            </td></tr>`}
+        </tbody>
+        ${rows.length ? `
+        <tfoot>
+          <tr>
+            <td>TOTAL &mdash; ${rows.length} type${rows.length === 1 ? '' : 's'}</td>
+            <td class="num">${fmtN(totalJobs)}</td>
+            <td class="num">${fmtN(totalPackets)}</td>
+            <td class="num">${fmtN(totalSheets)}</td>
+            <td class="num">${fmtKg(totalKg)}</td>
+            <td class="num money">${fmtMoney(totalCost)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
+    </div>
+  `;
+}
+
+// Board Sizes breakdown — one row per unique sheet size used, so it's
+// obvious which cut sizes dominate consumption. Aggregates job count,
+// packets, raw sheets, total kg, and cost. Sorted by kg desc.
+function _hgRenderBoardSizeTable(filteredJobs) {
+  const fmtN     = (n) => n ? n.toLocaleString('en-IN') : '';
+  const fmtKg    = (n) => n ? n.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '';
+  const fmtMoney = (n) => 'Rs ' + Math.round(n).toLocaleString('en-IN');
+  const groups = new Map();
+  for (const j of filteredJobs) {
+    const idStr = String(j.id);
+    const { paperType, l, w, gsm } = _hgParsePaper(j);
+    const sizeLabel = (l && w) ? `${l}×${w}` : '(unknown)';
+    const key = sizeLabel + '||' + (gsm || '');
+    const packets = _hgPacketsConsumed(j);
+    const isRe    = _hgIsReamPaper(paperType);
+    const packSize = isRe ? 500 : 100;
+    const divisor  = isRe ? 3100 : 15500;
+    const kgPerPack = (l && w && gsm) ? (l * w * gsm) / divisor : 0;
+    const totalKg   = kgPerPack * packets;
+    const rate      = Number(__hgBoardRatesCache && __hgBoardRatesCache.get(idStr)) || 0;
+    const cost      = totalKg * rate;
+    if (!groups.has(key)) {
+      groups.set(key, { size: sizeLabel, gsm: gsm || null, jobs: 0, packets: 0, sheets: 0, kg: 0, cost: 0 });
+    }
+    const g = groups.get(key);
+    g.jobs    += 1;
+    g.packets += packets;
+    g.sheets  += packets * packSize;
+    g.kg      += totalKg;
+    g.cost    += cost;
+  }
+  const rows = [...groups.values()].sort((a, b) => b.kg - a.kg || b.packets - a.packets);
+  const totalJobs    = rows.reduce((s, r) => s + r.jobs, 0);
+  const totalPackets = rows.reduce((s, r) => s + r.packets, 0);
+  const totalSheets  = rows.reduce((s, r) => s + r.sheets, 0);
+  const totalKg      = rows.reduce((s, r) => s + r.kg, 0);
+  const totalCost    = rows.reduce((s, r) => s + r.cost, 0);
+  return `
+    <div class="hg-data-head" style="margin-top:26px;">
+      <div class="hg-title" style="display:inline-flex;align-items:center;gap:10px;">
+        &#128207; By Board Size <span class="hg-count-pill">${rows.length}</span>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin:4px 0 10px;">
+      Same filtered set, grouped by sheet size × GSM (each size / GSM combination is its own row).
+    </div>
+    <div class="hg-sales-tablewrap">
+      <table class="hg-sales-table">
+        <thead>
+          <tr>
+            <th>Size</th>
+            <th class="num">GSM</th>
+            <th class="num">Jobs</th>
+            <th class="num">Packets</th>
+            <th class="num">Raw Sheets</th>
+            <th class="num">Total kg</th>
+            <th class="num">Board Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(r => `
+            <tr class="${r.kg === 0 ? 'muted' : ''}">
+              <td>${_hgEsc(r.size)}</td>
+              <td class="num">${r.gsm || '—'}</td>
+              <td class="num">${fmtN(r.jobs)}</td>
+              <td class="num">${fmtN(r.packets)}</td>
+              <td class="num">${fmtN(r.sheets)}</td>
+              <td class="num">${fmtKg(r.kg)}</td>
+              <td class="num money">${r.cost ? fmtMoney(r.cost) : '—'}</td>
+            </tr>
+          `).join('') : `
+            <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text2);font-style:italic;">
+              No jobs match the current filters.
+            </td></tr>`}
+        </tbody>
+        ${rows.length ? `
+        <tfoot>
+          <tr>
+            <td colspan="2">TOTAL &mdash; ${rows.length} size${rows.length === 1 ? '' : 's'}</td>
+            <td class="num">${fmtN(totalJobs)}</td>
+            <td class="num">${fmtN(totalPackets)}</td>
+            <td class="num">${fmtN(totalSheets)}</td>
+            <td class="num">${fmtKg(totalKg)}</td>
+            <td class="num money">${fmtMoney(totalCost)}</td>
+          </tr>
+        </tfoot>` : ''}
+      </table>
+    </div>
+  `;
+}
+
 // ── Board Cost ────────────────────────────────────────────────
 // Per-job board-material cost. Weight is derived from the job's paper
 // size × GSM × packets_consumed using the SAME formula the tracker's
@@ -14295,27 +14482,72 @@ function hgToggleAllVisibleSales(checked) {
 //   totalKg   = kgPerPack × packets_consumed
 //   cost      = totalKg × rate_per_kg
 
-// Split "Bleach Card · 24x34 · 210gsm · GreenBrand" (or with slashes /
-// no brand) into { paperType, l, w, gsm }. Returns nulls when any bit
-// is missing — the row still shows in the table, just with a dash in
-// the derived columns so it's obvious what's missing on the job.
-function _hgParsePaper(paperString) {
-  const s = String(paperString || '').trim();
+// Split a "Bleach Card · 24x34 · 210gsm · GreenBrand" style string into
+// its { paperType, l, w, gsm } parts. Handles the dot / pipe / slash
+// separators tracker code uses interchangeably. Missing tokens come
+// back null so the caller can decide whether to render a dash.
+function _hgParsePaperString(s) {
+  s = String(s || '').trim();
   if (!s) return { paperType: '', l: null, w: null, gsm: null };
-  const parts = s.split(/[·|]/).map(x => x.trim()).filter(Boolean);
+  const parts = s.split(/[·|\/]/).map(x => x.trim()).filter(Boolean);
   let paperType = '', l = null, w = null, gsm = null;
   for (const part of parts) {
     // "20x30" / "20 × 30" / "20 x 30" sheet-size token
     const sizeM = part.match(/^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i);
     if (sizeM && l == null) { l = parseFloat(sizeM[1]); w = parseFloat(sizeM[2]); continue; }
-    // "210gsm" / "210 gsm" GSM token
+    // "210gsm" / "210 gsm" / bare "210" GSM token
     const gsmM = part.match(/(\d+(?:\.\d+)?)\s*gsm/i);
     if (gsmM && gsm == null) { gsm = parseFloat(gsmM[1]); continue; }
-    // Anything else that's alphabetic is treated as a paper-type name;
-    // first non-numeric segment wins. Brand (last segment) may also
-    // match here, but the tracker convention puts the type first.
+    const bareNum = part.match(/^\s*(\d+(?:\.\d+)?)\s*$/);
+    if (bareNum && gsm == null && l != null) { gsm = parseFloat(bareNum[1]); continue; }
+    // First alphabetic non-GSM segment wins as paper-type name.
     if (!paperType && /[a-z]/i.test(part) && !/gsm/i.test(part) && !/^\d/.test(part)) {
       paperType = part;
+    }
+  }
+  return { paperType, l, w, gsm };
+}
+
+// Resolve a job's paper (type / size / GSM) using every source we know:
+//   1. j.paper string ("Bleach Card · 24x34 · 210gsm · Brand")
+//   2. j.size + j.gsm free-text fields
+//   3. tracker_inventory_items mirror row via j.inventory_item_id — the
+//      canonical source when the tracker didn't stamp the label on the
+//      job itself
+// Missing bits from one source are filled in from the next so a job
+// with an incomplete paper string still resolves cleanly.
+function _hgParsePaper(job) {
+  const jobLike = (typeof job === 'object' && job !== null) ? job : { paper: job };
+  let { paperType, l, w, gsm } = _hgParsePaperString(jobLike.paper);
+  // Free-text top-level fields that some tracker jobs use in place of
+  // (or in addition to) the composed paper string.
+  if ((l == null || w == null) && jobLike.size) {
+    const sz = _hgParsePaperString(jobLike.size);
+    if (l == null) l = sz.l;
+    if (w == null) w = sz.w;
+    if (!paperType && sz.paperType) paperType = sz.paperType;
+    if (gsm == null && sz.gsm != null) gsm = sz.gsm;
+  }
+  if (gsm == null && jobLike.gsm) {
+    const n = parseFloat(String(jobLike.gsm).replace(/[^0-9.\-]/g, ''));
+    if (Number.isFinite(n)) gsm = n;
+  }
+  // Inventory-item fallback — pulls paper_type / size / gsm from the
+  // linked mirror row (loaded into __hgInvCache alongside jobs).
+  const invId = jobLike.inventory_item_id;
+  if (invId && __hgInvCache) {
+    const it = __hgInvCache.find(i => Number(i.id) === Number(invId));
+    if (it) {
+      if (!paperType && it.paper_type) paperType = it.paper_type;
+      if ((l == null || w == null) && it.size) {
+        const sz = _hgParsePaperString(it.size);
+        if (l == null) l = sz.l;
+        if (w == null) w = sz.w;
+      }
+      if (gsm == null && it.gsm != null) {
+        const n = parseFloat(String(it.gsm).replace(/[^0-9.\-]/g, ''));
+        if (Number.isFinite(n)) gsm = n;
+      }
     }
   }
   return { paperType, l, w, gsm };
@@ -14352,7 +14584,7 @@ function _hgIsReamPaper(paperType) {
 function _hgBuildBoardRows(filteredJobs) {
   return filteredJobs.map(j => {
     const idStr = String(j.id);
-    const { paperType, l, w, gsm } = _hgParsePaper(j.paper);
+    const { paperType, l, w, gsm } = _hgParsePaper(j);
     const packets = _hgPacketsConsumed(j);
     const isRe = _hgIsReamPaper(paperType);
     const divisor = isRe ? 3100 : 15500;
