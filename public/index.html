@@ -2353,9 +2353,10 @@
 <!-- Floating calculator popover. Stays above modals so it can be opened
      while a job card / inventory form is being edited. See toggleCalculator(). -->
 <div id="calc-popover" style="display:none;"></div>
-<!-- Always-visible floating launcher. Clicking it toggles the calculator
-     popover. Sits above modal overlays so it's reachable mid-edit. -->
-<button id="calc-launcher" onclick="toggleCalculator()" title="Paper Calculator">&#129518;</button>
+<!-- Floating calc launcher was retired: the Job (PO) and Paper topbar tabs
+     ARE the calculator, so a second entry point just leaked the popover
+     onto Jobs / Inventory / Inbox when clicked there. Removed. -->
+
 <div id="print-area"></div>
 <div class="notif" id="notif"></div>
 
@@ -13837,16 +13838,33 @@ function hgJobsSubTab(name) {
 async function hgRenderSales() {
   const pane = document.getElementById('hg-sales-pane');
   if (!pane) return;
-  if (!__hgJobsCache) {
+  // Sales tab draws from BOTH data sources so the total is the true
+  // number: tracker-synced jobs (delivered work that came in over the
+  // wire) plus New Jobs (Guide-only cards Hamza has typed in for
+  // personal planning / off-tracker sales). Each source is cached
+  // independently so filtering stays snappy on re-render.
+  if (!__hgJobsCache || !__hgManualJobsCache) {
     pane.innerHTML = '<div class="hg-data-empty">Loading&hellip;</div>';
     try {
-      const res = await fetch('/api/jobs');
-      __hgJobsCache = await res.json();
+      const [trackerJobs, manualJobs] = await Promise.all([
+        __hgJobsCache        ? Promise.resolve(__hgJobsCache)        : fetch('/api/jobs').then(r => r.json()),
+        __hgManualJobsCache  ? Promise.resolve(__hgManualJobsCache)  : api('GET', '/api/guide-jobs'),
+      ]);
+      __hgJobsCache       = trackerJobs;
+      __hgManualJobsCache = manualJobs;
     } catch (e) {
       pane.innerHTML = `<div class="hg-data-empty">Error: ${_hgEsc(e.message)}</div>`;
       return;
     }
   }
+  // Combined list used everywhere below. New Job ids are re-tagged
+  // with a `G-` prefix so they don't collide with tracker ids in the
+  // table / selection set / export, and so the user can see at a
+  // glance which rows came from where.
+  const salesJobs = [
+    ...__hgJobsCache,
+    ...(__hgManualJobsCache || []).map(j => ({ ...j, id: 'G-' + j.id, guide_manual: true })),
+  ];
   const parseNum = (v) => {
     const cleaned = String(v == null ? '' : v).replace(/[^0-9.\-]/g, '');
     const n = parseFloat(cleaned);
@@ -13864,7 +13882,7 @@ async function hgRenderSales() {
   const prevPeriod  = _periodEl ? _periodEl.value : 'today';
   const prevFrom    = (document.getElementById('hg-sales-from')    || {}).value || '';
   const prevTo      = (document.getElementById('hg-sales-to')      || {}).value || '';
-  const companyList = [...new Set(__hgJobsCache.map(j => (j.client || '').trim()).filter(Boolean))]
+  const companyList = [...new Set(salesJobs.map(j => (j.client || '').trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   const compSelHtml = `
     <select id="hg-sales-company" class="hg-select" onchange="hgRenderSales()">
@@ -13902,7 +13920,7 @@ async function hgRenderSales() {
   const compFilter = prevCompany.trim().toLowerCase();
   const typeFilter = prevType.trim().toLowerCase();
   const { from: dateFrom, to: dateTo } = _hgPeriodRange(prevPeriod, prevFrom, prevTo);
-  const filtered = __hgJobsCache.filter(j => {
+  const filtered = salesJobs.filter(j => {
     if (compFilter && (j.client || '').trim().toLowerCase() !== compFilter) return false;
     if (typeFilter && _hgJobType(j) !== typeFilter) return false;
     if (dateFrom || dateTo) {
@@ -13947,10 +13965,12 @@ async function hgRenderSales() {
     const mrp = parseNum(j.mrp);
     // Prefer the deliveries[] running total (accurate per-shipment
     // record from the tracker's Deliveries ledger). Falls back to
-    // delqty when a job has no deliveries[] populated.
-    const qty = _hgShippedCartons(j);
+    // delqty when a job has no deliveries[] populated. New Jobs
+    // have no ledger — their delqty is what Hamza typed in.
+    const qty = j.guide_manual ? parseNum(j.delqty) : _hgShippedCartons(j);
     return {
       id: j.id,
+      guide_manual: !!j.guide_manual,
       date: _hgJobDate(j),
       client: (j.client || '').trim(),
       code: j.jobcode || '',
@@ -13973,9 +13993,12 @@ async function hgRenderSales() {
   __hgLastSalesRows       = jobRows;
   __hgLastSalesTotals     = { totalQty, totalRevenue };
   __hgLastSalesFilterNote = filterNote;
-  // "Select all visible" state — checks whether every visible id is
-  // currently in the selection set. Drives the header checkbox.
-  const allChecked = jobRows.length && jobRows.every(r => __hgSelectedJobs.has(r.id));
+  // "Select all visible" state — checks whether every SELECTABLE
+  // visible id is in the selection set. New Jobs (guide_manual) use
+  // string ids ("G-3") and aren't part of the tracker-mirror bulk
+  // delete flow, so they're excluded from selection entirely.
+  const selectableRows = jobRows.filter(r => !r.guide_manual);
+  const allChecked = selectableRows.length && selectableRows.every(r => __hgSelectedJobs.has(r.id));
   pane.innerHTML = `
     <div class="hg-filters" style="margin-bottom:14px;">
       ${compSelHtml}
@@ -14010,11 +14033,11 @@ async function hgRenderSales() {
           ${jobRows.length ? jobRows.map(r => `
             <tr class="${r.revenue === 0 ? 'muted' : ''}">
               <td class="selcell">
-                <input type="checkbox" data-hg-id="${r.id}"
+                ${r.guide_manual ? '' : `<input type="checkbox" data-hg-id="${r.id}"
                        ${__hgSelectedJobs.has(r.id) ? 'checked' : ''}
-                       onchange="hgToggleSelect(${r.id}, this.checked)">
+                       onchange="hgToggleSelect(${r.id}, this.checked)">`}
               </td>
-              <td class="num">${_hgEsc(r.id)}</td>
+              <td class="num">${_hgEsc(r.id)}${r.guide_manual ? ' <span title="Guide-only job (New Jobs)" style="display:inline-block;font-size:9px;font-weight:800;background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:6px;letter-spacing:0.04em;vertical-align:middle;">NEW</span>' : ''}</td>
               <td>${_hgEsc(r.date)}</td>
               <td>${_hgEsc(r.client)}</td>
               <td>${_hgEsc(r.name)}</td>
@@ -14044,9 +14067,11 @@ async function hgRenderSales() {
   `;
   hgUpdateSelBar();
 }
-// Header "select-all-visible" checkbox in the Sales table.
+// Header "select-all-visible" checkbox in the Sales table. Skips
+// New Jobs (guide_manual) — their ids are strings and they aren't
+// part of the tracker-mirror bulk delete flow.
 function hgToggleAllVisibleSales(checked) {
-  const rows = __hgLastSalesRows || [];
+  const rows = (__hgLastSalesRows || []).filter(r => !r.guide_manual);
   for (const r of rows) {
     if (checked) __hgSelectedJobs.add(r.id); else __hgSelectedJobs.delete(r.id);
   }
